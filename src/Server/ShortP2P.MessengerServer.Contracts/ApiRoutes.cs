@@ -35,6 +35,9 @@ public static class ApiRoutes
     /// <summary>GET anonymous liveness ping (200 OK).</summary>
     public const string ServerTechPing = Prefix + "/server-tech/ping";
 
+    /// <summary>GET anonymous health ping (200 OK).</summary>
+    public const string HealthPing = Prefix + "/health/ping";
+
     /// <summary>GET gossip + ratings: ensure the named server exists (default 0.8) and return all ratings.</summary>
     public const string TrustAskRating = Prefix + "/trust/ask-rating";
 
