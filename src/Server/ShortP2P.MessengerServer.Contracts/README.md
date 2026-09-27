@@ -39,7 +39,7 @@
 | `POST` | `/api/v1/bot_server_interaction/login` | Авторизация бота по `BotKey` → JWT |
 | `POST` | `/api/v1/bot_server_interaction/remove` | Удаление бота по `networkId` + `BotKey` |
 | `POST` | `/api/v1/bot_data_flow/wait_for_income_messages` | Long-poll входящих сообщений боту (`botNetworkId` + `BotKey`) |
-| `POST` | `/api/v1/bot_data_flow/send_messages` | Отправка сообщений бота клиентам (`[{ networkId, encryptedMessageBase64 }]`) |
+| `POST` | `/api/v1/bot_data_flow/send_messages` | Отправка сообщений бота клиентам (`[{ networkId, encryptedMessageBase64, correlationId? }]`) |
 
 `deviceId` — 64 lowercase hex (SHA-256 от install GUID). Даты — UTC. `encryptedDataBase64` — opaque.
 
@@ -97,9 +97,10 @@
 | Сторона | DTO | Поля |
 |---------|-----|------|
 | Бот → сервер | `BotWaitForIncomeMessagesRequest` | `requestId`, `botNetworkId`, `botKey`, опционально `timeoutSeconds` |
-| Сервер → бот | `BotWaitForIncomeMessagesResponse` | `requestId`, `messages`: `[{ networkId, encryptedMessageBase64 }]` |
+| Сервер → бот | `BotWaitForIncomeMessagesResponse` | `requestId`, `messages`: `[{ networkId, encryptedMessageBase64, correlationId? }]` |
 
 `networkId` в каждом элементе — network id **клиента-отправителя**. `encryptedMessageBase64` — opaque ciphertext; сервер не расшифровывает.
+Опциональный `correlationId` — сквозной идентификатор client ↔ bot; сервер передаёт его без изменений.
 
 ### SendMessages
 
@@ -107,10 +108,11 @@
 
 | Сторона | DTO | Поля |
 |---------|-----|------|
-| Бот → сервер | `BotSendMessagesRequest` | `requestId`, `botNetworkId`, `botKey`, `messages`: `[{ networkId, encryptedMessageBase64 }]` |
+| Бот → сервер | `BotSendMessagesRequest` | `requestId`, `botNetworkId`, `botKey`, `messages`: `[{ networkId, encryptedMessageBase64, correlationId? }]` |
 | Сервер → бот | `BotSendMessagesResponse` | `requestId` |
 
 `networkId` в каждом элементе — network id **клиента-получателя**.
+Опциональный `correlationId` — сквозной идентификатор client ↔ bot; сервер передаёт его без изменений.
 
 ## Сборка
 

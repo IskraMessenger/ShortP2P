@@ -11,4 +11,9 @@ public sealed class BotClientMessageDto
 
     /// <summary>Opaque ciphertext, base64.</summary>
     public required string EncryptedMessageBase64 { get; init; }
+
+    /// <summary>
+    /// Optional end-to-end correlation id (client ↔ bot); relayed unchanged by the server.
+    /// </summary>
+    public string? CorrelationId { get; init; }
 }
