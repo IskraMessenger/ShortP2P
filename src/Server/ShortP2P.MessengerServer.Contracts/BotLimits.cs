@@ -14,4 +14,7 @@ public static class BotLimits
     /// <para><b>Secret:</b> shared only between the server and the bot; never expose to clients or third parties.</para>
     /// </summary>
     public const int BotKeyLength = 64;
+
+    /// <summary>Max length of optional end-to-end <c>correlationId</c> on client ↔ bot messages.</summary>
+    public const int MaxCorrelationIdLength = 32;
 }

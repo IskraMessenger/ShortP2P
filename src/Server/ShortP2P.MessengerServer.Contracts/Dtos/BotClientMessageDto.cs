@@ -13,7 +13,8 @@ public sealed class BotClientMessageDto
     public required string EncryptedMessageBase64 { get; init; }
 
     /// <summary>
-    /// Optional end-to-end correlation id (client ↔ bot); relayed unchanged by the server.
+    /// Optional end-to-end correlation id (client ↔ bot); max <see cref="BotLimits.MaxCorrelationIdLength"/> chars;
+    /// relayed unchanged by the server.
     /// </summary>
     public string? CorrelationId { get; init; }
 }
