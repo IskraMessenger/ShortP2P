@@ -237,7 +237,7 @@ public sealed record ChatWireTransferOffer(
     string? BlobId = null) : ChatWireMessage
 {
     public string ResolveBlobId() =>
-        string.IsNullOrWhiteSpace(BlobId) ? TransferId : BlobId.Trim();
+        BlobId is null || string.IsNullOrWhiteSpace(BlobId) ? TransferId : BlobId.Trim();
 }
 
 public sealed record ChatWireTransferControl(

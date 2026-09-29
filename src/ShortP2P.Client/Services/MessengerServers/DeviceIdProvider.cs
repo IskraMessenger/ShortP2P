@@ -22,14 +22,14 @@ public sealed class DeviceIdProvider
 
     public async Task<string> GetDeviceIdAsync(CancellationToken cancellationToken = default)
     {
-        if (!string.IsNullOrEmpty(_cached))
-            return _cached;
+        if (_cached is { Length: > 0 } cached)
+            return cached;
 
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (!string.IsNullOrEmpty(_cached))
-                return _cached;
+            if (_cached is { Length: > 0 } cachedLocked)
+                return cachedLocked;
 
             var installId = await _storage.GetAsync(StorageKey).ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(installId) || !Guid.TryParse(installId, out var guid))

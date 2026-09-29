@@ -17,10 +17,10 @@ public static class BluetoothTransportAddress
             : new TransportAddress(TransportKind.Bluetooth, mac6.ToArray());
     }
 
-    public static bool TryParseMac(string text, out byte[] mac6)
+    public static bool TryParseMac(string? text, out byte[] mac6)
     {
         mac6 = [];
-        if (string.IsNullOrWhiteSpace(text))
+        if (text is null || string.IsNullOrWhiteSpace(text))
             return false;
 
         var clean = text.Trim().Replace("-", "").Replace(":", "");

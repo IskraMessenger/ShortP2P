@@ -484,7 +484,9 @@ public sealed class ChatRepository(AppDatabase appDatabase, PeerBlacklist? black
         chat.PeerHost = peerHost.Trim();
         chat.PeerPort = peerPort;
         chat.PeerEndpointsJson = MergePeerEndpoints(chat, peerHost, peerPort);
-        chat.RelayRouteBlob = string.IsNullOrWhiteSpace(relayRouteBlob) ? null : relayRouteBlob.Trim();
+        chat.RelayRouteBlob = relayRouteBlob is null || string.IsNullOrWhiteSpace(relayRouteBlob)
+            ? null
+            : relayRouteBlob.Trim();
         if (peerRsaPublicJson != null)
         {
             var trimmed = peerRsaPublicJson.Trim();

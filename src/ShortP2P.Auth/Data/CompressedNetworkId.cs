@@ -71,7 +71,7 @@ public readonly struct CompressedNetworkId : IEquatable<CompressedNetworkId>, IC
     public static bool TryParseShortString(string? text, out CompressedNetworkId networkId)
     {
         networkId = Empty;
-        if (string.IsNullOrWhiteSpace(text))
+        if (text is null || string.IsNullOrWhiteSpace(text))
             return false;
         try
         {

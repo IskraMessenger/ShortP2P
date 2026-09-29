@@ -658,7 +658,7 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
         string? preferredBaseUrl)
     {
         var ordered = new List<MessengerServerConnection>(ready.Count);
-        if (!string.IsNullOrWhiteSpace(preferredBaseUrl))
+        if (preferredBaseUrl is not null && !string.IsNullOrWhiteSpace(preferredBaseUrl))
         {
             var hint = SqliteMessengerServerRepository.NormalizeBaseUrl(preferredBaseUrl);
             var hinted = ready.FirstOrDefault(c =>

@@ -113,7 +113,7 @@ public static class LocalIPv4Resolver
     {
         var ordered = new List<string>();
         var publicIp = TryGetPublicIpv4(publicLookupTimeout);
-        if (!string.IsNullOrWhiteSpace(publicIp))
+        if (publicIp is not null && !string.IsNullOrWhiteSpace(publicIp))
             ordered.Add(publicIp.Trim());
 
         foreach (var ip in GetAllUnicastIpv4Ordered())

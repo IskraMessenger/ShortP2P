@@ -12,8 +12,7 @@ public static class PeerQrService
     public static PeerQrPayload BuildPayload(UserEntity user, string rsaPublicKeyJson, string? hostOverride = null)
     {
         List<string> hosts;
-        var single = hostOverride?.Trim();
-        hosts = !string.IsNullOrEmpty(single)
+        hosts = hostOverride?.Trim() is { Length: > 0 } single
             ? [single]
 #if NETFRAMEWORK
             : [string.IsNullOrWhiteSpace(user.NetworkIdShort) ? "127.0.0.1" : user.NetworkIdShort.Trim()];

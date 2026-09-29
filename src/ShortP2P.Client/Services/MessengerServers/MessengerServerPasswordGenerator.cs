@@ -55,7 +55,7 @@ public static class MessengerServerPasswordGenerator
 
     public static bool IsValid(string? password)
     {
-        if (string.IsNullOrEmpty(password) || password.Length is < 64 or > 256)
+        if (password is null || password.Length is < 64 or > 256)
             return false;
 
         var hasLower = false;
