@@ -122,15 +122,13 @@ public sealed class UdpTransport : ITransport
         }
     }
 
-    public ValueTask DisposeAsync()
-    {
-        return StopAsync();
-    }
+    public ValueTask DisposeAsync() => StopAsync(CancellationToken.None);
 
     /// <summary>Создаёт UDP-транспорт с привязкой к локальному адресу и порту.</summary>
     /// <param name="ip">Адрес привязки (часто <see cref="IPAddress.Any" />).</param>
     /// <param name="port">Локальный порт прослушивания.</param>
     /// <param name="enableBroadcast">Разрешить широковещательные исходящие датаграммы.</param>
+    /// <param name="logger"></param>
     public static UdpTransport CreateUdpTransport(IPAddress ip, int port, bool enableBroadcast = false,
         ILogger? logger = null)
     {
@@ -171,7 +169,7 @@ public sealed class UdpTransport : ITransport
                     _receiveGate.Release();
                 }
             }
-            catch (SocketException ex)
+            catch (SocketException)
             {
                 _udp = CreateClient(_bindAddress, _listenPort, _enableBroadcast);
             }

@@ -21,11 +21,11 @@ public sealed class LoginClientUseCase(
         if (string.IsNullOrWhiteSpace(command.NetworkId) || string.IsNullOrWhiteSpace(command.Password))
             throw UseCaseException.Validation("NetworkId and password are required.");
 
-        if (!DeviceIdRules.IsValid(command.DeviceId?.Trim()))
+        var deviceId = command.DeviceId?.Trim();
+        if (!DeviceIdRules.IsValid(deviceId))
             throw UseCaseException.Validation("DeviceId must be 64 lowercase hex characters (SHA-256).");
 
         var networkId = command.NetworkId.Trim();
-        var deviceId = command.DeviceId.Trim();
         var account = await accounts.FindByNetworkIdAsync(networkId, cancellationToken).ConfigureAwait(false);
         if (account is null || !passwordHasher.Verify(command.Password, account.PasswordSalt, account.PasswordHash))
             throw UseCaseException.Unauthorized("Invalid networkId or password.");

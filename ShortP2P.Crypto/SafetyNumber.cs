@@ -22,7 +22,7 @@ public static class SafetyNumber
     public static bool TryFromPublicKeyJson(string? json, out string emojis)
     {
         emojis = "";
-        if (string.IsNullOrWhiteSpace(json))
+        if (json is null || string.IsNullOrWhiteSpace(json))
             return false;
         try
         {
@@ -43,6 +43,8 @@ public static class SafetyNumber
 
     public static bool PublicKeyJsonEquals(string? a, string? b)
     {
+        if (a is null || b is null)
+            return string.IsNullOrWhiteSpace(a) && string.IsNullOrWhiteSpace(b);
         if (string.IsNullOrWhiteSpace(a) && string.IsNullOrWhiteSpace(b))
             return true;
         if (string.IsNullOrWhiteSpace(a) || string.IsNullOrWhiteSpace(b))

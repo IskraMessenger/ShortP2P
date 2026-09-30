@@ -175,7 +175,7 @@ public sealed class ChatP2PSession
     }
 
     private static bool LooksLikeHttpBaseUrl(string? host) =>
-        !string.IsNullOrWhiteSpace(host) &&
+        host is not null && !string.IsNullOrWhiteSpace(host) &&
         (host.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ||
          host.StartsWith("http://", StringComparison.OrdinalIgnoreCase));
 

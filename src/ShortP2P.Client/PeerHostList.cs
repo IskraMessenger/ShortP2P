@@ -20,7 +20,7 @@ public static class PeerHostList
     /// <summary>Уникальные корректные IP в порядке появления.</summary>
     public static IReadOnlyList<string> ParseIpCandidates(string? peerHost)
     {
-        return !string.IsNullOrWhiteSpace(peerHost)
+        return peerHost is not null && !string.IsNullOrWhiteSpace(peerHost)
             ? peerHost.Split(Separators, SplitOpts)
                 .Where(part => IPAddress.TryParse(part, out _)).Distinct(StringComparer.OrdinalIgnoreCase).ToList()
             : [];
@@ -29,7 +29,7 @@ public static class PeerHostList
     /// <summary>Уникальные IP, network id и нормализованные MAC в порядке появления.</summary>
     public static IReadOnlyList<string> ParseEndpointCandidates(string? peerHost)
     {
-        if (string.IsNullOrWhiteSpace(peerHost))
+        if (peerHost is null || string.IsNullOrWhiteSpace(peerHost))
             return [];
 
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -75,7 +75,7 @@ public static class PeerHostList
 
         foreach (var raw in additionalHostTexts)
         {
-            if (string.IsNullOrWhiteSpace(raw))
+            if (raw is null || string.IsNullOrWhiteSpace(raw))
                 continue;
             foreach (var part in raw.Split(Separators, SplitOpts))
                 if (TryNormalizeEndpointToken(part, out var token) && seen.Add(token))

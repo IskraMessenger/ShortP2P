@@ -39,7 +39,7 @@ public static class QrImageCodec
             };
             var r = reader.Decode(image);
             var raw = r?.Text;
-            if (string.IsNullOrWhiteSpace(raw))
+            if (raw is null || string.IsNullOrWhiteSpace(raw))
             {
                 error = "No QR code found in the image.";
                 return false;

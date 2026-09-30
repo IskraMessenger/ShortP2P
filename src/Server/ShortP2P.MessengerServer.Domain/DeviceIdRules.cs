@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text.RegularExpressions;
 
 namespace ShortP2P.MessengerServer.Domain;
@@ -10,7 +11,7 @@ public static partial class DeviceIdRules
     [GeneratedRegex("^[0-9a-f]{64}$", RegexOptions.CultureInvariant)]
     private static partial Regex HexSha256Regex();
 
-    public static bool IsValid(string? deviceId) =>
+    public static bool IsValid([NotNullWhen(true)] string? deviceId) =>
         !string.IsNullOrEmpty(deviceId) && HexSha256Regex().IsMatch(deviceId);
 
     public static string RequireValid(string? deviceId, string paramName = "deviceId")

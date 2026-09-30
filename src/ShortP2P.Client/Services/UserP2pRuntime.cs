@@ -862,7 +862,9 @@ public sealed class UserP2pRuntime : IAsyncDisposable
             _discoveryHooked = false;
             try
             {
-                await _presencePingWorkCts?.CancelAsync();
+                var presenceCts = _presencePingWorkCts;
+                if (presenceCts != null)
+                    await presenceCts.CancelAsync().ConfigureAwait(false);
             }
             catch
             {

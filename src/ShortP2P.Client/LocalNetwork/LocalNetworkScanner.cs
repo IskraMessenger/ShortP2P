@@ -1073,7 +1073,7 @@ public sealed class LocalNetworkScanner(
         try
         {
             var pub = LocalIPv4Resolver.TryGetPublicIpv4(TimeSpan.FromSeconds(1));
-            if (!string.IsNullOrWhiteSpace(pub))
+            if (pub is not null && !string.IsNullOrWhiteSpace(pub))
                 RememberUdpPresenceTarget(pub.Trim());
         }
         catch

@@ -141,7 +141,7 @@ public sealed class MessengerServerConnection : IAsyncDisposable
 
     public static string NormalizeFingerprint(string? fingerprint)
     {
-        if (string.IsNullOrWhiteSpace(fingerprint))
+        if (fingerprint is null || string.IsNullOrWhiteSpace(fingerprint))
             return "";
         var sb = new System.Text.StringBuilder(fingerprint.Length);
         foreach (var c in fingerprint.Trim())

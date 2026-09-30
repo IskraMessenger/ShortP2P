@@ -124,7 +124,6 @@ public sealed class WindowsBluetoothTransport : ITransport
         _advertisementWatcher = new BluetoothLEAdvertisementWatcher
         {
             AdvertisementFilter = null,
-            AllowExtendedAdvertisements = false,
             ScanningMode = BluetoothLEScanningMode.Passive,
             SignalStrengthFilter =
             {

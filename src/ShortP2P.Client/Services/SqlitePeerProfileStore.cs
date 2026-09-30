@@ -23,7 +23,7 @@ public sealed class SqlitePeerProfileStore(AppDatabase appDatabase) : IPeerProfi
             avatar = null;
 
         var idShort = networkId.ToShortString();
-        var nick = string.IsNullOrWhiteSpace(nickname) ? "" : nickname.Trim();
+        var nick = nickname is null || string.IsNullOrWhiteSpace(nickname) ? "" : nickname.Trim();
 
         await _db.WriteAsync(async conn =>
         {

@@ -102,7 +102,7 @@ public sealed class MessengerServerManager : IAsyncDisposable
                 target = null;
         }
 
-        if (target == null && !string.IsNullOrWhiteSpace(baseUrlHint))
+        if (target == null && baseUrlHint is not null && !string.IsNullOrWhiteSpace(baseUrlHint))
             target = await FindExistingByEndpointAsync(baseUrlHint, cancellationToken).ConfigureAwait(false);
 
         if (target == null)

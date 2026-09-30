@@ -63,8 +63,8 @@ public partial class ChatDetailPage : ContentPage
 #if ANDROID
     private global::Android.Media.MediaRecorder? _voiceRecorder;
     private string? _voiceTempPath;
-#endif
     private bool _isVoiceRecording;
+#endif
 
     public ChatDetailPage(AuthService auth, ChatRepository repo, UserP2pRuntime p2p, ChatMediaOptions media,
         MessengerServerManager messengerServers, ILogger<ChatDetailPage> logger)
@@ -442,11 +442,13 @@ public partial class ChatDetailPage : ContentPage
         if (_p2pSession == null)
             return;
 
+#if ANDROID
         if (_isVoiceRecording)
         {
             await StopVoiceRecordingAndSendAsync().ConfigureAwait(true);
             return;
         }
+#endif
 
         await StartVoiceRecordingAsync().ConfigureAwait(true);
     }

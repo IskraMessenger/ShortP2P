@@ -120,7 +120,7 @@ public static class PeerQrCodec
 
     private static void TryAddQrHost(List<string> merged, HashSet<string> seen, string? s)
     {
-        if (string.IsNullOrWhiteSpace(s))
+        if (s is null || string.IsNullOrWhiteSpace(s))
             return;
         var t = s.Trim();
         if (!IPAddress.TryParse(t, out _))

@@ -69,7 +69,9 @@ public sealed class P2pRoutingSettingsStore(ISessionStorage storage)
 
     private static string? NullIfWhiteSpace(string? s)
     {
-        return string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+        if (s is null || string.IsNullOrWhiteSpace(s))
+            return null;
+        return s.Trim();
     }
 
     public async Task SaveAsync(P2pRoutingSettings settings)

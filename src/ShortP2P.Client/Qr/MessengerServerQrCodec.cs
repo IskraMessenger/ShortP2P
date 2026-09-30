@@ -149,10 +149,11 @@ public static class MessengerServerQrCodec
             return false;
         }
 
-        p.H = p.H.Trim();
+        p.H = (p.H ?? "").Trim();
         p.T = MessengerServerQrPayload.TypeMessengerServer;
-        p.S = string.IsNullOrWhiteSpace(p.S) ||
-              string.Equals(p.S.Trim(), Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+        var scheme = p.S;
+        p.S = scheme is null || string.IsNullOrWhiteSpace(scheme) ||
+              string.Equals(scheme.Trim(), Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
             ? null
             : Uri.UriSchemeHttp;
         payload = p;
@@ -188,7 +189,7 @@ public static class MessengerServerQrCodec
     }
 
     private static bool IsAllowedScheme(string? scheme) =>
-        string.IsNullOrWhiteSpace(scheme) ||
+        scheme is null || string.IsNullOrWhiteSpace(scheme) ||
         string.Equals(scheme.Trim(), Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
         string.Equals(scheme.Trim(), Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase);
 

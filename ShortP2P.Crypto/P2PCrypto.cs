@@ -17,7 +17,9 @@ public static class P2PCrypto
         using var rsa = RSA.Create();
         rsa.KeySize = 1024;
         var parameters = rsa.ExportParameters(true);
-        var pub = new RsaPublicKey(parameters.Modulus, parameters.Exponent);
+        var modulus = parameters.Modulus ?? throw new CryptographicException("RSA modulus is missing.");
+        var exponent = parameters.Exponent ?? throw new CryptographicException("RSA exponent is missing.");
+        var pub = new RsaPublicKey(modulus, exponent);
         var priv = new RsaPrivateKey(parameters);
         return new RsaKeyPair(pub, priv);
     }
