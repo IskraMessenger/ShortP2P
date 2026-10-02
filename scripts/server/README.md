@@ -71,6 +71,37 @@ sudo dpkg -i scripts/server/out/deb/shortp2p-messengerserver_0.1.0-1_amd64.deb
 
 `postgresql` только в Recommends. `apt remove` данные не трогает, `apt purge` — удаляет.
 
+## Docker Compose
+
+Нужен Docker Engine + Compose v2. Сборка из корня репозитория (образ `shortp2p-messengerserver`).
+
+Маппинг портов `HOST:INTERNAL`, внутренний по умолчанию **51111**:
+
+```bash
+./scripts/server/docker/run.sh
+./scripts/server/docker/run.sh 8080              # 8080 -> 51111
+./scripts/server/docker/run.sh 8080:51111
+./scripts/server/docker/run.sh --host-port 8443 --internal-port 51111 --self-host 10.0.0.5
+```
+
+```powershell
+.\scripts\server\docker\run.ps1
+.\scripts\server\docker\run.ps1 8080
+.\scripts\server\docker\run.ps1 -HostPort 8080 -InternalPort 51111 -SelfHost 10.0.0.5
+```
+
+| Что | Значение |
+|-----|----------|
+| Compose | `scripts/server/docker/docker-compose.yml` |
+| Env-пример | `scripts/server/docker/.env.example` → копируется в `.env` при первом запуске |
+| Listen (в контейнере) | `INTERNAL_PORT` (default `51111`) |
+| Publish (на хосте) | `HOST_PORT` (default `51111`) → `HOST_PORT:INTERNAL_PORT` |
+| `Trust:SelfPort` | = `HOST_PORT` |
+| Data / LiteDB | volume `shortp2p-data` → `/var/lib/shortp2p/data` |
+| Certs | volume `shortp2p-certs` → `/etc/shortp2p/certs` |
+
+При первом запуске entrypoint создаёт self-signed PFX (быстрый старт) и `Auth:SigningKey` в data volume. Для реальной ноды смонтируйте свой PFX в `/etc/shortp2p/certs/server.pfx` и задайте `TRUST_SELF_HOST` / `SHORTP2P_CERT_PASSWORD`.
+
 ## После установки
 
 1. Задайте `Auth:SigningKey` (≥ 32 символов) в Production json.
