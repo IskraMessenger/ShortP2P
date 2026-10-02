@@ -26,8 +26,6 @@ public sealed class ChatForm : Form
     private const string FileDownloadHintAction = "Скачать";
     private const int MessagesPageSize = 15;
 
-    private const int MaxVoiceRecordSeconds = 120;
-
     private const int SB_VERT = 1;
     private const uint SIF_ALL = 0x17;
     private static readonly Color FileDownloadActionColor = Color.FromArgb(0, 102, 204);
@@ -253,8 +251,7 @@ public sealed class ChatForm : Form
         bottom.Controls.Add(_attachDocument, 5, 0);
         bottom.Controls.Add(_send, 6, 0);
 
-        _buttonTooltips.SetToolTip(_attachVoice,
-            "Голосовое (Ogg Opus, моно): нажмите для начала записи, ещё раз — остановить и отправить. Битрейт зависит от режима экономии трафика.");
+        RefreshVoiceRecordTooltip();
         _buttonTooltips.SetToolTip(_attachImage, "Отправить изображение");
         _buttonTooltips.SetToolTip(_attachVideo,
             "Отправить видео OGV (обычный: 320x240, экономия: 160x120, до 60 сек)");
@@ -505,7 +502,8 @@ public sealed class ChatForm : Form
             }
 
             var prepared = await VideoAttachHelper
-                .TryLoadAndValidateOgvAsync(dlg.FileName, _media.MaxDocumentBytes,
+                .TryLoadAndValidateOgvAsync(dlg.FileName,
+                    _media.GetMaxVideoBytes(_appSettings.Current.TrafficQuality),
                     _appSettings.Current.TrafficQuality)
                 .ConfigureAwait(true);
             if (!prepared.Success || prepared.Bytes == null || prepared.OutputFileName == null ||
@@ -517,7 +515,7 @@ public sealed class ChatForm : Form
             }
 
             _media.ValidateDocumentMime(prepared.OutputMime);
-            _media.ValidateDocumentSize(prepared.Bytes.Length);
+            _media.ValidateVideoSize(prepared.Bytes.Length, _appSettings.Current.TrafficQuality);
             await _p2PSession.SendFileAsync(prepared.OutputFileName, prepared.Bytes, prepared.OutputMime)
                 .ConfigureAwait(true);
             _userActions.LogInformation("Chat {Peer}: sent ogv video ({Bytes} bytes, {Mime})",
@@ -563,7 +561,7 @@ public sealed class ChatForm : Form
         try
         {
             _media.ValidateDocumentMime(win.Result.MimeType);
-            _media.ValidateDocumentSize(win.Result.Bytes.Length);
+            _media.ValidateVideoSize(win.Result.Bytes.Length, _appSettings.Current.TrafficQuality);
             await _p2PSession.SendFileAsync(win.Result.FileName, win.Result.Bytes, win.Result.MimeType)
                 .ConfigureAwait(true);
             _userActions.LogInformation("Chat {Peer}: sent camera video ({Bytes} bytes, {Mime})",
@@ -627,18 +625,18 @@ public sealed class ChatForm : Form
                 return;
             }
 
-            if (bytes.Length > _media.MaxImageBytes)
+            var maxImageBytes = _media.GetMaxImageBytes(_appSettings.Current.TrafficQuality);
+            if (bytes.Length > maxImageBytes)
             {
-                var limKb = (_media.MaxImageBytes + 1023) / 1024;
                 var want = MessageBox.Show(this,
-                    $"Файл {(bytes.Length + 1023) / 1024} КБ больше лимита {limKb} КБ (настраивается в chat-media.json). Сжать изображение?",
+                    $"Файл {ChatMediaOptions.FormatByteLimit(bytes.Length)} больше лимита {ChatMediaOptions.FormatByteLimit(maxImageBytes)} (настраивается в chat-media.json). Сжать изображение?",
                     "Размер",
                     MessageBoxButtons.YesNo,
                     MessageBoxIcon.Question,
                     MessageBoxDefaultButton.Button1);
                 if (want != DialogResult.Yes)
                     return;
-                if (!ImageAttachmentCompressor.TryCompressToMaxBytes(bytes, _media.MaxImageBytes, out var compressed,
+                if (!ImageAttachmentCompressor.TryCompressToMaxBytes(bytes, maxImageBytes, out var compressed,
                         out var err))
                 {
                     MessageBox.Show(this, err ?? "Не удалось уложиться в лимит.", "Сжатие", MessageBoxButtons.OK,
@@ -684,7 +682,9 @@ public sealed class ChatForm : Form
 
         using var dlg = new OpenFileDialog
         {
-            Title = "Документ Word / LibreOffice (до 10 МБ)",
+            Title = "Документ Word / LibreOffice (до " +
+                    ChatMediaOptions.FormatByteLimit(
+                        _media.GetMaxDocumentBytes(_appSettings.Current.TrafficQuality)) + ")",
             Filter =
                 "Документы|*.doc;*.docx;*.rtf;*.pdf;*.odt;*.ods;*.odp;*.odg;*.xlsx;*.xls;*.pptx;*.ppt|Все файлы|*.*",
             CheckFileExists = true
@@ -718,10 +718,12 @@ public sealed class ChatForm : Form
                 return;
             }
 
-            if (bytes.Length > _media.MaxDocumentBytes)
+            var maxDocumentBytes = _media.GetMaxDocumentBytes(_appSettings.Current.TrafficQuality);
+            if (bytes.Length > maxDocumentBytes)
             {
-                var limMb = (_media.MaxDocumentBytes + (1024 * 1024 - 1)) / (1024 * 1024);
-                MessageBox.Show(this, $"Файл больше {limMb} МБ (лимит в chat-media.json: maxDocumentBytes).", "Размер",
+                MessageBox.Show(this,
+                    $"Файл больше {ChatMediaOptions.FormatByteLimit(maxDocumentBytes)} (лимит в chat-media.json: maxDocumentBytes).",
+                    "Размер",
                     MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
@@ -834,10 +836,22 @@ public sealed class ChatForm : Form
         }
     }
 
+    private int MaxVoiceRecordSeconds =>
+        _media.GetMaxVoiceSeconds(_appSettings.Current.TrafficQuality);
+
+    private void RefreshVoiceRecordTooltip()
+    {
+        var voiceBytes = ChatMediaOptions.FormatByteLimit(
+            _media.GetMaxVoiceBytes(_appSettings.Current.TrafficQuality));
+        _buttonTooltips.SetToolTip(_attachVoice,
+            $"Голосовое (Ogg Opus, моно, до {voiceBytes}, до {MaxVoiceRecordSeconds} сек): нажмите для начала записи, ещё раз — остановить и отправить. Битрейт зависит от режима экономии трафика.");
+    }
+
     private void OnAttachVoice()
     {
         if (_p2PSession == null)
             return;
+        RefreshVoiceRecordTooltip();
 
         if (_voiceWaveIn != null)
         {
@@ -1032,7 +1046,16 @@ public sealed class ChatForm : Form
                 }
 
                 _media.ValidateDocumentMime(VoiceRecordHelper.VoiceMessageMime);
-                _media.ValidateDocumentSize(ogg.Length);
+                var maxVoiceBytes = _media.GetMaxVoiceBytes(_appSettings.Current.TrafficQuality);
+                if (ogg.Length > maxVoiceBytes)
+                {
+                    MessageBox.Show(this,
+                        $"Файл больше {ChatMediaOptions.FormatByteLimit(maxVoiceBytes)}.",
+                        "Голосовое", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+
+                _media.ValidateVoiceSize(ogg.Length, _appSettings.Current.TrafficQuality);
                 await _p2PSession!
                     .SendFileAsync(VoiceRecordHelper.VoiceFileName, ogg, VoiceRecordHelper.VoiceMessageMime)
                     .ConfigureAwait(true);

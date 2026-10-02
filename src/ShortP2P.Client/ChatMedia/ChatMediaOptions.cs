@@ -1,11 +1,35 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using ShortP2P.Discovery;
 
 namespace ShortP2P.Client.ChatMedia;
 
 /// <summary>Лимиты вложений в чат. JSON-файл по умолчанию рядом с приложением: <c>chat-media.json</c>.</summary>
 public sealed class ChatMediaOptions
 {
+    /// <summary>Прежний лимит изображения в ультраэкономии (суперэкономия).</summary>
+    public const int SuperEconomyMaxImageBytes = 100 * 1024;
+
+    /// <summary>Прежний лимит документа в ультраэкономии (суперэкономия).</summary>
+    public const int SuperEconomyMaxDocumentBytes = 200 * 1024;
+
+    /// <summary>Прежний лимит видео в ультраэкономии: раньше совпадал с лимитом документа.</summary>
+    public const int SuperEconomyMaxVideoBytes = 200 * 1024;
+
+    /// <summary>Прежний лимит голоса в ультраэкономии: раньше совпадал с лимитом документа.</summary>
+    public const int SuperEconomyMaxVoiceBytes = 200 * 1024;
+
+    /// <summary>Прежняя максимальная длительность голосовой записи в ультраэкономии (секунды).</summary>
+    public const int SuperEconomyMaxVoiceSeconds = 120;
+
+    /// <summary>Максимальная длительность голосовой записи вне суперэкономии: 10 минут.</summary>
+    public const int MaxVoiceSeconds = 10 * 60;
+
+    private const int MinConfigurableImageBytes = 4096;
+    private const int MaxConfigurableImageBytes = 10 * 1024 * 1024;
+    private const int MinConfigurableDocumentBytes = 16 * 1024;
+    private const int MaxConfigurableDocumentBytes = 20 * 1024 * 1024;
+
     private static readonly JsonSerializerOptions JsonRead = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -13,8 +37,8 @@ public sealed class ChatMediaOptions
         AllowTrailingCommas = true
     };
 
-    /// <summary>Максимальный размер одного изображения (байт), по умолчанию 100 КиБ.</summary>
-    public int MaxImageBytes { get; set; } = 100 * 1024;
+    /// <summary>Максимальный размер изображения вне суперэкономии: 10 МБ = 10×1024×1024 байт.</summary>
+    public int MaxImageBytes { get; set; } = 10 * 1024 * 1024;
 
     /// <summary>Разрешённые MIME-типы изображений.</summary>
     public List<string> AllowedImageMimeTypes { get; set; } =
@@ -24,11 +48,18 @@ public sealed class ChatMediaOptions
         "image/gif"
     ];
 
-    /// <summary>Максимальный размер одного документа (Word / LibreOffice и т.п.), по умолчанию 200 КиБ.</summary>
-    public int MaxDocumentBytes { get; set; } = 200 * 1024;
+    /// <summary>Максимальный размер документа вне суперэкономии: 20 МБ = 20×1024×1024 байт.</summary>
+    public int MaxDocumentBytes { get; set; } = 20 * 1024 * 1024;
 
-    /// <summary>Верхняя граница размера расшифрованного бинарного кадра чата (вложение + заголовок wire).</summary>
-    public int MaxMessengerBinaryBytes => MaxDocumentBytes + 256 * 1024;
+    /// <summary>Максимальный размер видео вне суперэкономии: 30 МБ = 30×1024×1024 байт.</summary>
+    public int MaxVideoBytes { get; set; } = 30 * 1024 * 1024;
+
+    /// <summary>Максимальный размер голосового сообщения вне суперэкономии: 1 МБ = 1024×1024 = 1_048_576 байт.</summary>
+    public int MaxVoiceBytes { get; set; } = 1_048_576;
+
+    /// <summary>Верхняя граница размера расшифрованного бинарного кадра чата (крупнейшее вложение + заголовок wire).</summary>
+    public int MaxMessengerBinaryBytes =>
+        Math.Max(MaxVideoBytes, Math.Max(MaxDocumentBytes, MaxImageBytes)) + 256 * 1024;
 
     /// <summary>Разрешённые MIME для вложений-документов.</summary>
     public List<string> AllowedDocumentMimeTypes { get; set; } =
@@ -54,6 +85,36 @@ public sealed class ChatMediaOptions
         "audio/ogg"
     ];
 
+    /// <summary>
+    /// Суперэкономия — <see cref="TrafficQualityMode.UltraEconomy"/> (ультраэкономия).
+    /// Нормальный режим и экономия используют расширенные лимиты.
+    /// </summary>
+    public static bool IsSuperEconomy(TrafficQualityMode mode) =>
+        mode == TrafficQualityMode.UltraEconomy;
+
+    public int GetMaxImageBytes(TrafficQualityMode mode) =>
+        IsSuperEconomy(mode) ? SuperEconomyMaxImageBytes : MaxImageBytes;
+
+    public int GetMaxDocumentBytes(TrafficQualityMode mode) =>
+        IsSuperEconomy(mode) ? SuperEconomyMaxDocumentBytes : MaxDocumentBytes;
+
+    public int GetMaxVideoBytes(TrafficQualityMode mode) =>
+        IsSuperEconomy(mode) ? SuperEconomyMaxVideoBytes : MaxVideoBytes;
+
+    public int GetMaxVoiceBytes(TrafficQualityMode mode) =>
+        IsSuperEconomy(mode) ? SuperEconomyMaxVoiceBytes : MaxVoiceBytes;
+
+    public int GetMaxVoiceSeconds(TrafficQualityMode mode) =>
+        IsSuperEconomy(mode) ? SuperEconomyMaxVoiceSeconds : MaxVoiceSeconds;
+
+    public static string FormatByteLimit(int bytes)
+    {
+        const int mib = 1024 * 1024;
+        if (bytes >= mib && bytes % mib == 0)
+            return $"{bytes / mib} МБ";
+        return $"{(bytes + 1023) / 1024} КБ";
+    }
+
     public static ChatMediaOptions LoadOrDefault(string? jsonPath)
     {
         var o = new ChatMediaOptions();
@@ -66,9 +127,9 @@ public sealed class ChatMediaOptions
             var dto = JsonSerializer.Deserialize<ChatMediaFileDto>(json, JsonRead);
             if (dto == null)
                 return o;
-            if (dto.MaxImageBytes is >= 4096 and <= 10 * 1024 * 1024)
+            if (dto.MaxImageBytes is >= MinConfigurableImageBytes and <= MaxConfigurableImageBytes)
                 o.MaxImageBytes = dto.MaxImageBytes.Value;
-            if (dto.MaxDocumentBytes is >= 16 * 1024 and <= 15 * 1024 * 1024)
+            if (dto.MaxDocumentBytes is >= MinConfigurableDocumentBytes and <= MaxConfigurableDocumentBytes)
                 o.MaxDocumentBytes = dto.MaxDocumentBytes.Value;
             if (dto.AllowedImageMimeTypes is { Count: > 0 } list)
                 o.AllowedImageMimeTypes = list
@@ -101,12 +162,13 @@ public sealed class ChatMediaOptions
             throw new ArgumentException($"Unsupported image type: {mimeType}", nameof(mimeType));
     }
 
-    public void ValidateSize(int byteLength)
+    public void ValidateSize(int byteLength, TrafficQualityMode mode)
     {
         if (byteLength <= 0)
             throw new ArgumentException("Image is empty.", nameof(byteLength));
-        if (byteLength > MaxImageBytes)
-            throw new ArgumentException($"Image exceeds limit ({MaxImageBytes} bytes).", nameof(byteLength));
+        var limit = GetMaxImageBytes(mode);
+        if (byteLength > limit)
+            throw new ArgumentException($"Image exceeds limit ({limit} bytes).", nameof(byteLength));
     }
 
     public void ValidateDocumentMime(string mimeType)
@@ -116,12 +178,43 @@ public sealed class ChatMediaOptions
             throw new ArgumentException($"Unsupported document type: {mimeType}", nameof(mimeType));
     }
 
-    public void ValidateDocumentSize(int byteLength)
+    public void ValidateDocumentSize(int byteLength, TrafficQualityMode mode)
     {
         if (byteLength <= 0)
             throw new ArgumentException("Document is empty.", nameof(byteLength));
-        if (byteLength > MaxDocumentBytes)
-            throw new ArgumentException($"Document exceeds limit ({MaxDocumentBytes} bytes).", nameof(byteLength));
+        var limit = GetMaxDocumentBytes(mode);
+        if (byteLength > limit)
+            throw new ArgumentException($"Document exceeds limit ({limit} bytes).", nameof(byteLength));
+    }
+
+    public void ValidateVideoSize(int byteLength, TrafficQualityMode mode)
+    {
+        if (byteLength <= 0)
+            throw new ArgumentException("Video is empty.", nameof(byteLength));
+        var limit = GetMaxVideoBytes(mode);
+        if (byteLength > limit)
+            throw new ArgumentException($"Video exceeds limit ({limit} bytes).", nameof(byteLength));
+    }
+
+    public void ValidateVoiceSize(int byteLength, TrafficQualityMode mode)
+    {
+        if (byteLength <= 0)
+            throw new ArgumentException("Voice is empty.", nameof(byteLength));
+        var limit = GetMaxVoiceBytes(mode);
+        if (byteLength > limit)
+            throw new ArgumentException($"Voice exceeds limit ({limit} bytes).", nameof(byteLength));
+    }
+
+    /// <summary>Видео и голос — свои лимиты; остальные файлы — лимит документа.</summary>
+    public void ValidateFileSize(string mimeType, int byteLength, TrafficQualityMode mode)
+    {
+        var mime = mimeType.Trim();
+        if (mime.StartsWith("video/", StringComparison.OrdinalIgnoreCase))
+            ValidateVideoSize(byteLength, mode);
+        else if (mime.StartsWith("audio/", StringComparison.OrdinalIgnoreCase))
+            ValidateVoiceSize(byteLength, mode);
+        else
+            ValidateDocumentSize(byteLength, mode);
     }
 
     private sealed class ChatMediaFileDto

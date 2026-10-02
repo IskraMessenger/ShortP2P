@@ -5,7 +5,8 @@ namespace ShortP2P.MessengerServer.UseCases.Blobs;
 
 public sealed class PutBlobUseCase(IBlobRepository blobs, IClock clock)
 {
-    public const int MaxCiphertextBytes = 12 * 1024 * 1024;
+    /// <summary>Covers a 30 MiB video plus the hybrid envelope. Keep in sync with <c>BlobLimits.MaxCiphertextBytes</c>.</summary>
+    public const int MaxCiphertextBytes = 32 * 1024 * 1024;
 
     public async Task ExecuteAsync(PutBlobCommand command, CancellationToken cancellationToken = default)
     {

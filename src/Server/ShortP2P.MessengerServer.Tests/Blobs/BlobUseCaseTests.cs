@@ -71,6 +71,12 @@ public class BlobUseCaseTests
     }
 
     [Fact]
+    public void MaxCiphertextBytes_CoversThirtyMebibyteVideoPlusEnvelope()
+    {
+        Assert.Equal(32 * 1024 * 1024, PutBlobUseCase.MaxCiphertextBytes);
+    }
+
+    [Fact]
     public async Task Put_WhenCiphertextTooLarge_ThrowsValidation()
     {
         var h = new TestHarness();

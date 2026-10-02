@@ -112,6 +112,9 @@ public sealed class ChatP2PSession : IAsyncDisposable
 
     private ITransport? BluetoothTransport => _runtime.BluetoothTransport;
 
+    private TrafficQualityMode CurrentTrafficQuality =>
+        _routingSettings?.TrafficQuality ?? TrafficQualityMode.Normal;
+
     public ValueTask DisposeAsync()
     {
         return StopAsync();
@@ -735,7 +738,7 @@ public sealed class ChatP2PSession : IAsyncDisposable
                     try
                     {
                         _media.ValidateDocumentMime(f.MimeType);
-                        _media.ValidateDocumentSize(f.FileBytes.Length);
+                        _media.ValidateFileSize(f.MimeType, f.FileBytes.Length, CurrentTrafficQuality);
                         _ = await _repo.AddFileMessageAsync(_chat.Id, false, f.FileName, f.MimeType, f.FileBytes)
                             .ConfigureAwait(false);
                     }
@@ -1451,7 +1454,7 @@ public sealed class ChatP2PSession : IAsyncDisposable
         if (imageBytes.Length == 0)
             throw new ArgumentException("Image is empty.", nameof(imageBytes));
         _media.ValidateMime(mimeType);
-        _media.ValidateSize(imageBytes.Length);
+        _media.ValidateSize(imageBytes.Length, CurrentTrafficQuality);
 
         var bytes = imageBytes.ToArray();
         await CreateAndSendTransferOfferAsync("image", "image", mimeType, bytes, cancellationToken)
@@ -1464,7 +1467,7 @@ public sealed class ChatP2PSession : IAsyncDisposable
         if (fileBytes.Length == 0)
             throw new ArgumentException("File is empty.", nameof(fileBytes));
         _media.ValidateDocumentMime(mimeType);
-        _media.ValidateDocumentSize(fileBytes.Length);
+        _media.ValidateFileSize(mimeType, fileBytes.Length, CurrentTrafficQuality);
 
         var bytes = fileBytes.ToArray();
         var safeName = Path.GetFileName(fileName.Trim());
@@ -1581,7 +1584,7 @@ public sealed class ChatP2PSession : IAsyncDisposable
         {
             case ChatWireImage img:
                 _media.ValidateMime(img.MimeType);
-                _media.ValidateSize(img.ImageBytes.Length);
+                _media.ValidateSize(img.ImageBytes.Length, CurrentTrafficQuality);
                 bytes = img.ImageBytes;
                 mimeType = img.MimeType;
                 fileName = string.IsNullOrWhiteSpace(row.TransferFileName) ? row.Text : row.TransferFileName;
@@ -1589,7 +1592,7 @@ public sealed class ChatP2PSession : IAsyncDisposable
                 break;
             case ChatWireFile f:
                 _media.ValidateDocumentMime(f.MimeType);
-                _media.ValidateDocumentSize(f.FileBytes.Length);
+                _media.ValidateFileSize(f.MimeType, f.FileBytes.Length, CurrentTrafficQuality);
                 bytes = f.FileBytes;
                 mimeType = f.MimeType;
                 fileName = string.IsNullOrWhiteSpace(f.FileName)

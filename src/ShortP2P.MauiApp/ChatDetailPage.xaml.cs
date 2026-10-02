@@ -64,6 +64,8 @@ public partial class ChatDetailPage : ContentPage
     private global::Android.Media.MediaRecorder? _voiceRecorder;
     private string? _voiceTempPath;
     private bool _isVoiceRecording;
+    private IDispatcherTimer? _voiceLimitTimer;
+    private DateTime _voiceRecordStartUtc;
 #endif
 
     public ChatDetailPage(AuthService auth, ChatRepository repo, UserP2pRuntime p2p, ChatMediaOptions media,
@@ -480,6 +482,7 @@ public partial class ChatDetailPage : ContentPage
 
             _isVoiceRecording = true;
             VoiceButton.Text = "Stop";
+            StartVoiceLimitTimer();
         }
         catch (Exception ex)
         {
@@ -495,6 +498,7 @@ public partial class ChatDetailPage : ContentPage
     private async Task StopVoiceRecordingAndSendAsync()
     {
 #if ANDROID
+        StopVoiceLimitTimer();
         try
         {
             if (_voiceRecorder != null)
@@ -540,7 +544,14 @@ public partial class ChatDetailPage : ContentPage
             }
 
             _media.ValidateDocumentMime(VoiceMessageMime);
-            _media.ValidateDocumentSize(bytes.Length);
+            var maxVoiceBytes = _media.GetMaxVoiceBytes(_p2p.Settings.TrafficQuality);
+            if (bytes.Length > maxVoiceBytes)
+            {
+                ShowDeliveryIssue($"Файл больше {ChatMediaOptions.FormatByteLimit(maxVoiceBytes)}.");
+                return;
+            }
+
+            _media.ValidateVoiceSize(bytes.Length, _p2p.Settings.TrafficQuality);
             await _p2pSession!.SendFileAsync(VoiceFileName, bytes, VoiceMessageMime).ConfigureAwait(true);
             ClearDeliveryIssue();
         }
@@ -576,9 +587,40 @@ public partial class ChatDetailPage : ContentPage
 #endif
     }
 
+#if ANDROID
+    private void StartVoiceLimitTimer()
+    {
+        StopVoiceLimitTimer();
+        _voiceRecordStartUtc = DateTime.UtcNow;
+        var timer = Dispatcher.CreateTimer();
+        timer.Interval = TimeSpan.FromMilliseconds(400);
+        timer.Tick += (_, _) =>
+        {
+            if (!_isVoiceRecording)
+                return;
+            var maxSeconds = _media.GetMaxVoiceSeconds(_p2p.Settings.TrafficQuality);
+            if ((DateTime.UtcNow - _voiceRecordStartUtc).TotalSeconds < maxSeconds)
+                return;
+            timer.Stop();
+            _ = StopVoiceRecordingAndSendAsync();
+        };
+        _voiceLimitTimer = timer;
+        timer.Start();
+    }
+
+    private void StopVoiceLimitTimer()
+    {
+        if (_voiceLimitTimer == null)
+            return;
+        _voiceLimitTimer.Stop();
+        _voiceLimitTimer = null;
+    }
+#endif
+
     private async Task StopVoiceRecordingAndDiscardAsync()
     {
 #if ANDROID
+        StopVoiceLimitTimer();
         try
         {
             if (_voiceRecorder != null)
@@ -706,16 +748,16 @@ public partial class ChatDetailPage : ContentPage
                 return;
             }
 
-            if (bytes.Length > _media.MaxImageBytes)
+            var maxImageBytes = _media.GetMaxImageBytes(_p2p.Settings.TrafficQuality);
+            if (bytes.Length > maxImageBytes)
             {
-                var limKb = (_media.MaxImageBytes + 1023) / 1024;
                 var want = await DisplayAlert("Размер",
-                    $"Файл {(bytes.Length + 1023) / 1024} КБ больше лимита {limKb} КБ (настраивается в chat-media.json). Сжать изображение?",
+                    $"Файл {ChatMediaOptions.FormatByteLimit(bytes.Length)} больше лимита {ChatMediaOptions.FormatByteLimit(maxImageBytes)} (настраивается в chat-media.json). Сжать изображение?",
                     "Сжать",
                     "Отмена").ConfigureAwait(true);
                 if (!want)
                     return;
-                if (!ImageAttachmentCompressor.TryCompressToMaxBytes(bytes, _media.MaxImageBytes, out var compressed,
+                if (!ImageAttachmentCompressor.TryCompressToMaxBytes(bytes, maxImageBytes, out var compressed,
                         out var err))
                 {
                     await DisplayAlert("Сжатие", err ?? "Не удалось уложиться в лимит.", "OK").ConfigureAwait(true);
@@ -756,7 +798,9 @@ public partial class ChatDetailPage : ContentPage
         {
             var pick = await FilePicker.Default.PickAsync(new PickOptions
             {
-                PickerTitle = "Документ Word / LibreOffice (до 10 МБ)",
+                PickerTitle = "Документ Word / LibreOffice (до " +
+                              ChatMediaOptions.FormatByteLimit(
+                                  _media.GetMaxDocumentBytes(_p2p.Settings.TrafficQuality)) + ")",
                 FileTypes = OfficeDocFileTypes
             }).ConfigureAwait(true);
             if (pick == null)
@@ -788,10 +832,11 @@ public partial class ChatDetailPage : ContentPage
                 return;
             }
 
-            if (bytes.Length > _media.MaxDocumentBytes)
+            var maxDocumentBytes = _media.GetMaxDocumentBytes(_p2p.Settings.TrafficQuality);
+            if (bytes.Length > maxDocumentBytes)
             {
-                var limMb = (_media.MaxDocumentBytes + (1024 * 1024 - 1)) / (1024 * 1024);
-                await DisplayAlert("Размер", $"Файл больше {limMb} МБ (лимит maxDocumentBytes в chat-media.json).",
+                await DisplayAlert("Размер",
+                        $"Файл больше {ChatMediaOptions.FormatByteLimit(maxDocumentBytes)} (лимит maxDocumentBytes в chat-media.json).",
                         "OK")
                     .ConfigureAwait(true);
                 return;
