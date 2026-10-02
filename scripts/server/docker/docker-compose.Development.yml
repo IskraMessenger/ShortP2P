@@ -1,0 +1,26 @@
+services:
+  messengerserver:
+    image: shortp2p-messengerserver:${IMAGE_TAG:-dev}
+    build:
+      context: ../../..
+      dockerfile: scripts/server/docker/Dockerfile
+    container_name: ${COMPOSE_PROJECT_NAME:-shortp2p-dev}-messengerserver
+    ports:
+      # HOST_PORT:INTERNAL_PORT — internal defaults to 51111
+      - "${HOST_PORT:-51111}:${INTERNAL_PORT:-51111}"
+    environment:
+      INTERNAL_PORT: "${INTERNAL_PORT:-51111}"
+      HOST_PORT: "${HOST_PORT:-51111}"
+      ASPNETCORE_ENVIRONMENT: Development
+      Trust__SelfHost: "${TRUST_SELF_HOST:-127.0.0.1}"
+      Trust__SelfPort: "${HOST_PORT:-51111}"
+      SHORTP2P_CERT_PASSWORD: "${SHORTP2P_CERT_PASSWORD:-changeit}"
+      Auth__SigningKey: "${AUTH_SIGNING_KEY:-}"
+    volumes:
+      - shortp2p-data-dev:/var/lib/shortp2p/data
+      - shortp2p-certs-dev:/etc/shortp2p/certs
+    restart: unless-stopped
+
+volumes:
+  shortp2p-data-dev:
+  shortp2p-certs-dev:

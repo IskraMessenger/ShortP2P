@@ -34,13 +34,13 @@ RUN mkdir -p /var/lib/shortp2p/data /etc/shortp2p/certs \
     && chmod 755 /var/lib/shortp2p /var/lib/shortp2p/data /etc/shortp2p /etc/shortp2p/certs
 
 COPY --from=build /app/publish .
-COPY scripts/server/docker/appsettings.Production.json ./appsettings.Production.json
 COPY scripts/server/docker/entrypoint.sh /entrypoint.sh
 
 RUN chmod +x /entrypoint.sh
 
-ENV ASPNETCORE_ENVIRONMENT=Production \
-    INTERNAL_PORT=51111 \
+# ASPNETCORE_ENVIRONMENT is set by compose (Production / Development).
+# Config comes from published appsettings*.json; container paths/ports/certs via entrypoint env.
+ENV INTERNAL_PORT=51111 \
     HOST_PORT=51111 \
     SHORTP2P_DATA_DIR=/var/lib/shortp2p/data \
     SHORTP2P_CERT_DIR=/etc/shortp2p/certs

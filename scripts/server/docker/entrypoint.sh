@@ -48,6 +48,7 @@ if [ ! -f "$PFX_PATH" ]; then
 fi
 
 export ASPNETCORE_ENVIRONMENT="${ASPNETCORE_ENVIRONMENT:-Production}"
+echo "  ASPNETCORE_ENVIRONMENT=${ASPNETCORE_ENVIRONMENT}"
 export ASPNETCORE_URLS="https://0.0.0.0:${INTERNAL_PORT}"
 export Kestrel__Endpoints__Https__Url="https://0.0.0.0:${INTERNAL_PORT}"
 export Kestrel__Endpoints__Https__Certificate__Path="$PFX_PATH"
