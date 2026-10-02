@@ -14,6 +14,7 @@ set -euo pipefail
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=_run-common.sh
 . "$script_dir/_run-common.sh"
+ensure_native_docker_platform
 
 HOST_PORT="${HOST_PORT:-51111}"
 INTERNAL_PORT="${INTERNAL_PORT:-51111}"
@@ -70,9 +71,10 @@ fi
 export HOST_PORT INTERNAL_PORT TRUST_SELF_HOST MEMORY_MB CPUS CERTS_DIR
 
 echo "Environment:   Production"
+echo "Docker platform: $(effective_docker_platform_label)"
 echo "Port mapping:  ${HOST_PORT}:${INTERNAL_PORT} (host:internal)"
 echo "Resources:     ${MEMORY_MB} MB RAM, ${CPUS} CPU"
-echo "TLS certs:     $CERTS_DIR → /etc/shortp2p/certs"
+echo "TLS certs:     $CERTS_DIR -> /etc/shortp2p/certs"
 echo "Trust:SelfHost $TRUST_SELF_HOST  Trust:SelfPort $HOST_PORT"
 
 compose_args=( -f "$compose_file" )

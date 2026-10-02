@@ -187,6 +187,11 @@ then call the same run scripts / compose files above (plus overlay `docker-compo
 with `platform: linux/arm64` on `messengerserver`). Same CLI as the non-arm64 scripts
 (ports, memory, cpus, certs, persistence, postgres credentials).
 
+Non-arm64 `run*.ps1` / `run*.sh` **clear** sticky `DOCKER_PLATFORM` /
+`DOCKER_DEFAULT_PLATFORM` left over from a prior `run-arm64-*` in the same shell, and on
+amd64 hosts force `linux/amd64` so BuildKit does not fall into qemu-user arm64 (segfault
+during `dotnet restore`). Only the `run-arm64-*` wrappers select `linux/arm64`.
+
 **On the Pi** (64-bit OS, `uname -m` → `aarch64` / `arm64`) use the `.sh` scripts:
 
 ```bash

@@ -42,9 +42,83 @@ function Set-DockerPlatform {
     $env:DOCKER_DEFAULT_PLATFORM = $Platform
 }
 
+function Clear-DockerPlatform {
+    Remove-Item Env:DOCKER_PLATFORM -ErrorAction SilentlyContinue
+    Remove-Item Env:DOCKER_DEFAULT_PLATFORM -ErrorAction SilentlyContinue
+}
+
+# Host OS -> typical Docker linux platform (amd64 / arm64), or $null if unknown.
+function Get-HostLinuxDockerPlatform {
+    try {
+        $osArch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+        switch ($osArch) {
+            'X64' { return 'linux/amd64' }
+            'Arm64' { return 'linux/arm64' }
+        }
+    }
+    catch { }
+
+    try {
+        $uname = Get-Command uname -ErrorAction SilentlyContinue
+        if ($uname) {
+            $arch = (& uname -m 2>$null | Out-String).Trim()
+            switch -Regex ($arch) {
+                '^(x86_64|amd64)$' { return 'linux/amd64' }
+                '^(aarch64|arm64)$' { return 'linux/arm64' }
+            }
+        }
+    }
+    catch { }
+
+    return $null
+}
+
+# Label for script output (effective compose / build platform).
+function Get-EffectiveDockerPlatformLabel {
+    if ($env:DOCKER_PLATFORM) {
+        return $env:DOCKER_PLATFORM
+    }
+    if ($env:DOCKER_DEFAULT_PLATFORM) {
+        return $env:DOCKER_DEFAULT_PLATFORM
+    }
+    $native = Get-HostLinuxDockerPlatform
+    if ($native) {
+        return "$native (host default)"
+    }
+    return 'host default'
+}
+
+# Called by non-arm64 run*.ps1 after dot-sourcing this file.
+# Clears sticky DOCKER_* from a prior run-arm64-* in the same shell, then forces
+# linux/amd64 on amd64 hosts. When invoked from a run-arm64*.ps1 wrapper, keeps arm64.
+function Initialize-DockerNativePlatform {
+    $fromArm64Wrapper = $false
+    foreach ($frame in Get-PSCallStack) {
+        if ($frame.ScriptName -and ($frame.ScriptName -match '[\\/]run-arm64[^\\/]*\.ps1$')) {
+            $fromArm64Wrapper = $true
+            break
+        }
+    }
+
+    if ($fromArm64Wrapper) {
+        Set-DockerPlatform -Platform 'linux/arm64'
+        return
+    }
+
+    Remove-Item Env:SHORTP2P_DOCKER_ARM64 -ErrorAction SilentlyContinue
+    Clear-DockerPlatform
+
+    $native = Get-HostLinuxDockerPlatform
+    if ($native -eq 'linux/amd64') {
+        # Avoid qemu-user arm64 builds when DOCKER_DEFAULT_PLATFORM or Desktop defaults are sticky.
+        Set-DockerPlatform -Platform 'linux/amd64'
+    }
+}
+
 # Initialize linux/arm64 for Raspberry Pi / cross-build via buildx.
 function Initialize-DockerArm64Platform {
     Test-Arm64CapableHost
+    $env:SHORTP2P_DOCKER_ARM64 = '1'
     Set-DockerPlatform -Platform 'linux/arm64'
 }
 
@@ -92,6 +166,40 @@ function Get-AppUserRoot {
 
 function Get-DefaultPersistenceDir([string] $Suffix) {
     return (Join-Path (Get-AppUserRoot) "ShortP2P\MessengerServer\$Suffix")
+}
+
+# Development default: persistence-development. If only legacy persistence-debug exists, keep using it.
+# Ignores sticky $env:PERSISTENCE_DIR that still points at the old default path after the rename.
+function Resolve-DevelopmentPersistenceDir {
+    param(
+        [string] $Explicit = '',
+        [string] $FromEnv = ''
+    )
+
+    if ($Explicit) {
+        return $Explicit
+    }
+
+    $preferred = Get-DefaultPersistenceDir -Suffix 'persistence-development'
+    $legacy = Get-DefaultPersistenceDir -Suffix 'persistence-debug'
+
+    if ($FromEnv) {
+        $fromNorm = $FromEnv.TrimEnd('\', '/')
+        $legacyNorm = $legacy.TrimEnd('\', '/')
+        $isStickyOldDefault = [string]::Equals($fromNorm, $legacyNorm, [StringComparison]::OrdinalIgnoreCase)
+        if (-not $isStickyOldDefault) {
+            return $FromEnv
+        }
+        if ((Test-Path -LiteralPath $legacy) -and -not (Test-Path -LiteralPath $preferred)) {
+            return $legacy
+        }
+        return $preferred
+    }
+
+    if ((Test-Path -LiteralPath $legacy) -and -not (Test-Path -LiteralPath $preferred)) {
+        return $legacy
+    }
+    return $preferred
 }
 
 # Default: $APPUSER/ShortP2P/MessengerServer/certs (independent of persistence).

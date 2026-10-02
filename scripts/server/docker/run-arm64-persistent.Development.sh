@@ -13,8 +13,7 @@ script_dir="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=_run-common.sh
 . "$script_dir/_run-common.sh"
 
-require_arm64_capable_host
-export_docker_platform linux/arm64
+export_docker_arm64_platform
 
 echo "Docker platform: linux/arm64"
 exec "$script_dir/run-persistent.Development.sh" "$@"

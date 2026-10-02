@@ -30,6 +30,63 @@ export_docker_platform() {
   export DOCKER_DEFAULT_PLATFORM="$platform"
 }
 
+clear_docker_platform() {
+  unset DOCKER_PLATFORM DOCKER_DEFAULT_PLATFORM || true
+}
+
+# Host OS -> typical Docker linux platform (amd64 / arm64), or empty if unknown.
+host_linux_docker_platform() {
+  local arch
+  arch="$(uname -m 2>/dev/null || true)"
+  case "$arch" in
+    x86_64|amd64) printf '%s\n' 'linux/amd64' ;;
+    aarch64|arm64) printf '%s\n' 'linux/arm64' ;;
+  esac
+}
+
+# Label for script output (effective compose / build platform).
+effective_docker_platform_label() {
+  if [ -n "${DOCKER_PLATFORM:-}" ]; then
+    printf '%s\n' "$DOCKER_PLATFORM"
+  elif [ -n "${DOCKER_DEFAULT_PLATFORM:-}" ]; then
+    printf '%s\n' "$DOCKER_DEFAULT_PLATFORM"
+  else
+    local native
+    native="$(host_linux_docker_platform)"
+    if [ -n "$native" ]; then
+      printf '%s\n' "$native (host default)"
+    else
+      printf '%s\n' 'host default'
+    fi
+  fi
+}
+
+# Called by non-arm64 run*.sh after sourcing this file.
+# Clears sticky DOCKER_* from a prior run-arm64-* in the same shell, then forces
+# linux/amd64 on amd64 hosts. Honors SHORTP2P_DOCKER_ARM64=1 from arm64 wrappers.
+ensure_native_docker_platform() {
+  if [ "${SHORTP2P_DOCKER_ARM64:-}" = "1" ]; then
+    return 0
+  fi
+
+  clear_docker_platform
+
+  local native
+  native="$(host_linux_docker_platform)"
+  if [ "$native" = "linux/amd64" ]; then
+    # Avoid qemu-user arm64 builds when DOCKER_DEFAULT_PLATFORM is sticky.
+    export_docker_platform linux/amd64
+  fi
+}
+
+# Mark + export linux/arm64 for Raspberry Pi / cross-build via buildx.
+# Sets SHORTP2P_DOCKER_ARM64 so nested non-arm64 run scripts do not reset the platform.
+export_docker_arm64_platform() {
+  require_arm64_capable_host || return 1
+  export SHORTP2P_DOCKER_ARM64=1
+  export_docker_platform linux/arm64
+}
+
 # Path to platform compose overlay when DOCKER_PLATFORM is set; else empty.
 # Callers: platform_file="$(docker_platform_compose_file "$script_dir")"
 #          [ -n "$platform_file" ] && compose_args+=( -f "$platform_file" )
@@ -109,6 +166,38 @@ appuser_root() {
 default_persistence_dir() {
   local suffix="${1:-persistence}"
   printf '%s\n' "$(appuser_root)/ShortP2P/MessengerServer/$suffix"
+}
+
+# Development default: persistence-development. If only legacy persistence-debug exists, keep using it.
+# Ignores sticky PERSISTENCE_DIR that still points at the old default path after the rename.
+# Usage: PERSISTENCE_DIR="$(resolve_development_persistence_dir "$PERSISTENCE_DIR")"
+resolve_development_persistence_dir() {
+  local from_env="${1:-}"
+  local preferred legacy from_norm legacy_norm
+
+  preferred="$(default_persistence_dir persistence-development)"
+  legacy="$(default_persistence_dir persistence-debug)"
+
+  if [ -n "$from_env" ]; then
+    from_norm="${from_env%/}"
+    legacy_norm="${legacy%/}"
+    if [ "$from_norm" = "$legacy_norm" ]; then
+      if [ -d "$legacy" ] && [ ! -d "$preferred" ]; then
+        printf '%s\n' "$legacy"
+      else
+        printf '%s\n' "$preferred"
+      fi
+      return 0
+    fi
+    printf '%s\n' "$from_env"
+    return 0
+  fi
+
+  if [ -d "$legacy" ] && [ ! -d "$preferred" ]; then
+    printf '%s\n' "$legacy"
+  else
+    printf '%s\n' "$preferred"
+  fi
 }
 
 # Default: $APPUSER/ShortP2P/MessengerServer/certs (independent of persistence).

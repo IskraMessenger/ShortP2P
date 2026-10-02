@@ -11,9 +11,14 @@
         <MicrosoftExtensionsVersion>10.0.0</MicrosoftExtensionsVersion>
         <MicrosoftEntityFrameworkCoreVersion>10.0.0</MicrosoftEntityFrameworkCoreVersion>
 
+        <!--
+          Guard every Exists() and $(Prop.Method()) call: empty/unset env vars and empty
+          TargetFramework throw NullReferenceException in PropertyExpander on newer MSBuild
+          (Linux Docker/CI). Never call Exists on a path built from an empty property.
+        -->
         <AndroidSdkDirectory Condition="'$(AndroidSdkDirectory)' == '' and '$(ANDROID_SDK_ROOT)' != '' and Exists('$(ANDROID_SDK_ROOT)')">$(ANDROID_SDK_ROOT)</AndroidSdkDirectory>
         <AndroidSdkDirectory Condition="'$(AndroidSdkDirectory)' == '' and '$(ANDROID_HOME)' != '' and Exists('$(ANDROID_HOME)')">$(ANDROID_HOME)</AndroidSdkDirectory>
-        <AndroidSdkDirectory Condition="'$(AndroidSdkDirectory)' == '' and Exists('$(LOCALAPPDATA)\Android\Sdk')">$(LOCALAPPDATA)\Android\Sdk</AndroidSdkDirectory>
+        <AndroidSdkDirectory Condition="'$(AndroidSdkDirectory)' == '' and $([MSBuild]::IsOSPlatform('windows')) and '$(LOCALAPPDATA)' != '' and Exists('$(LOCALAPPDATA)\Android\Sdk')">$(LOCALAPPDATA)\Android\Sdk</AndroidSdkDirectory>
 
         <JavaSdkDirectory Condition="'$(JavaSdkDirectory)' == '' and '$(JAVA_HOME)' != '' and $([MSBuild]::IsOSPlatform('windows')) and Exists('$(JAVA_HOME)\bin\jar.exe')">$(JAVA_HOME)</JavaSdkDirectory>
         <JavaSdkDirectory Condition="'$(JavaSdkDirectory)' == '' and '$(JAVA_HOME)' != '' and !$([MSBuild]::IsOSPlatform('windows')) and Exists('$(JAVA_HOME)/bin/jar')">$(JAVA_HOME)</JavaSdkDirectory>
@@ -32,8 +37,9 @@
       Android RID graph treats linux-arm64 as compatible with android-arm64, so NuGet pulls
       SQLitePCLRaw.lib.e_sqlite3 linux .so into the APK instead of the Android AAR libs (DllNotFoundException).
       Native SQLite for Android must come from SQLitePCLRaw.lib.e_sqlite3.android only.
+      Guard TargetFramework: empty TFM during restore/early eval makes .Contains NRE in MSBuild.
     -->
-    <ItemGroup Condition="$(TargetFramework.Contains('-android'))">
+    <ItemGroup Condition="'$(TargetFramework)' != '' and $(TargetFramework.Contains('-android'))">
         <PackageReference Update="SQLitePCLRaw.lib.e_sqlite3">
             <ExcludeAssets>native</ExcludeAssets>
         </PackageReference>

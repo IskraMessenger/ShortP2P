@@ -28,4 +28,10 @@ $scriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyI
 . (Join-Path $scriptDir '_run-common.ps1')
 Initialize-DockerArm64Platform
 Write-Host 'Docker platform: linux/arm64'
-& (Join-Path $scriptDir 'run-persistent.Development.ps1') @PSBoundParameters
+try {
+    & (Join-Path $scriptDir 'run-persistent.Development.ps1') @PSBoundParameters
+}
+finally {
+    # Do not leave the arm64 marker sticky for a later non-arm64 run in this shell.
+    Remove-Item Env:SHORTP2P_DOCKER_ARM64 -ErrorAction SilentlyContinue
+}

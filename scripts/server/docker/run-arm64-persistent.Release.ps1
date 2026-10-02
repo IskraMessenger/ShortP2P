@@ -26,4 +26,9 @@ $scriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyI
 . (Join-Path $scriptDir '_run-common.ps1')
 Initialize-DockerArm64Platform
 Write-Host 'Docker platform: linux/arm64'
-& (Join-Path $scriptDir 'run-persistent.Release.ps1') @PSBoundParameters
+try {
+    & (Join-Path $scriptDir 'run-persistent.Release.ps1') @PSBoundParameters
+}
+finally {
+    Remove-Item Env:SHORTP2P_DOCKER_ARM64 -ErrorAction SilentlyContinue
+}

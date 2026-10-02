@@ -100,6 +100,7 @@ function Set-PortMapping([string] $Value) {
 $repoRoot = Find-RepoRoot
 $scriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Join-Path $repoRoot 'scripts\server\docker' }
 . (Join-Path $scriptDir '_run-common.ps1')
+Initialize-DockerNativePlatform
 $baseCompose = Join-Path $scriptDir 'docker-compose.Development.yml'
 $persistCompose = Join-Path $scriptDir 'docker-compose.persistent.yml'
 $envFile = Join-Path $scriptDir '.env.persistent.Development'
@@ -150,15 +151,7 @@ elseif (-not (Test-Port $ResolvedPostgresPort)) {
     throw "Invalid POSTGRES_PORT: $ResolvedPostgresPort"
 }
 
-$ResolvedPersistenceDir = if ($PersistenceDir) {
-    $PersistenceDir
-}
-elseif ($env:PERSISTENCE_DIR) {
-    $env:PERSISTENCE_DIR
-}
-else {
-    Get-DefaultPersistenceDir -Suffix 'persistence-development'
-}
+$ResolvedPersistenceDir = Resolve-DevelopmentPersistenceDir -Explicit $PersistenceDir -FromEnv $env:PERSISTENCE_DIR
 
 $ResolvedCertsDir = if ($CertsDir) {
     $CertsDir
@@ -193,10 +186,11 @@ $env:POSTGRES_PORT = "$ResolvedPostgresPort"
 if (-not $env:POSTGRES_USER) { $env:POSTGRES_USER = 'shortp2p' }
 
 Write-Host "Environment:   Development (persistent)"
+Write-Host "Docker platform: $(Get-EffectiveDockerPlatformLabel)"
 Write-Host "Port mapping:  ${ResolvedHostPort}:${ResolvedInternalPort} (host:internal)"
 Write-Host "Resources:     ${ResolvedMemoryMb} MB RAM, ${ResolvedCpus} CPU"
 Write-Host "Postgres data: $ResolvedPersistenceDir"
-Write-Host "TLS certs:     $ResolvedCertsDir → /etc/shortp2p/certs"
+Write-Host "TLS certs:     $ResolvedCertsDir -> /etc/shortp2p/certs"
 Write-Host "Postgres port: ${ResolvedPostgresPort} (Compose network Host=postgres; not published to host)"
 Write-Host "Postgres admin: $($env:POSTGRES_USER)"
 Write-Host "Trust:SelfHost $ResolvedSelfHost  Trust:SelfPort $ResolvedHostPort"

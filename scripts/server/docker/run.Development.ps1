@@ -95,6 +95,7 @@ function Set-PortMapping([string] $Value) {
 $repoRoot = Find-RepoRoot
 $scriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Join-Path $repoRoot 'scripts\server\docker' }
 . (Join-Path $scriptDir '_run-common.ps1')
+Initialize-DockerNativePlatform
 $composeFile = Join-Path $scriptDir 'docker-compose.Development.yml'
 $envFile = Join-Path $scriptDir '.env.Development'
 $envExample = Join-Path $scriptDir '.env.Development.example'
@@ -159,9 +160,10 @@ $env:CPUS = "$ResolvedCpus"
 $env:CERTS_DIR = $ResolvedCertsDir
 
 Write-Host "Environment:   Development"
+Write-Host "Docker platform: $(Get-EffectiveDockerPlatformLabel)"
 Write-Host "Port mapping:  ${ResolvedHostPort}:${ResolvedInternalPort} (host:internal)"
 Write-Host "Resources:     ${ResolvedMemoryMb} MB RAM, ${ResolvedCpus} CPU"
-Write-Host "TLS certs:     $ResolvedCertsDir → /etc/shortp2p/certs"
+Write-Host "TLS certs:     $ResolvedCertsDir -> /etc/shortp2p/certs"
 Write-Host "Trust:SelfHost $ResolvedSelfHost  Trust:SelfPort $ResolvedHostPort"
 
 $composeArgs = @('-f', $composeFile)

@@ -12,6 +12,7 @@ set -euo pipefail
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=_run-common.sh
 . "$script_dir/_run-common.sh"
+ensure_native_docker_platform
 
 HOST_PORT="${HOST_PORT:-51111}"
 INTERNAL_PORT="${INTERNAL_PORT:-51111}"
@@ -58,9 +59,7 @@ env_file="$script_dir/.env.persistent.Development"
 
 parse_run_args "$@"
 
-if [ -z "$PERSISTENCE_DIR" ]; then
-  PERSISTENCE_DIR="$(default_persistence_dir persistence-development)"
-fi
+PERSISTENCE_DIR="$(resolve_development_persistence_dir "$PERSISTENCE_DIR")"
 if [ -z "$CERTS_DIR" ]; then
   CERTS_DIR="$(default_certs_dir)"
 fi
@@ -83,10 +82,11 @@ if [ -n "${POSTGRES_PASSWORD:-}" ]; then
 fi
 
 echo "Environment:   Development (persistent)"
+echo "Docker platform: $(effective_docker_platform_label)"
 echo "Port mapping:  ${HOST_PORT}:${INTERNAL_PORT} (host:internal)"
 echo "Resources:     ${MEMORY_MB} MB RAM, ${CPUS} CPU"
 echo "Postgres data: $PERSISTENCE_DIR"
-echo "TLS certs:     $CERTS_DIR → /etc/shortp2p/certs"
+echo "TLS certs:     $CERTS_DIR -> /etc/shortp2p/certs"
 echo "Postgres port: ${POSTGRES_PORT} (Compose network Host=postgres; not published to host)"
 echo "Postgres admin: ${POSTGRES_USER:-shortp2p}"
 echo "Trust:SelfHost $TRUST_SELF_HOST  Trust:SelfPort $HOST_PORT"
