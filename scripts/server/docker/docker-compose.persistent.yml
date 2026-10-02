@@ -1,0 +1,66 @@
+# Overlay: PostgreSQL 11 as a companion service on the Compose private network.
+# Use with:
+#   docker compose -f docker-compose.yml -f docker-compose.persistent.yml
+#   docker compose -f docker-compose.Development.yml -f docker-compose.persistent.yml
+#
+# Host data directory: PERSISTENCE_DIR (bind-mounted to Postgres data).
+# TLS certs: CERTS_DIR → /etc/shortp2p/certs (set in base compose; independent of persistence).
+# Admin credentials: prompted by run-persistent on first start (or auto-generated);
+# stored only in shortp2p-pg-secrets volume — not published to the host.
+#
+# Networking: postgres and messengerserver share the default Compose network.
+# App connects via DNS Host=postgres and POSTGRES_PORT (default 5432).
+# Postgres has no host port mapping — reachable only from messengerserver.
+# Startup: postgres becomes healthy first; messengerserver depends_on it;
+# entrypoint.sh still waits for credentials.env + TCP before starting the .NET app.
+
+services:
+  postgres:
+    image: postgres:11
+    container_name: ${COMPOSE_PROJECT_NAME:-shortp2p}-postgres
+    entrypoint: ["/bin/bash", "/shortp2p/postgres-entrypoint.sh"]
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB:-shortp2p_messenger}"
+      POSTGRES_USER: "${POSTGRES_USER:-shortp2p}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-}"
+      POSTGRES_PORT: "${POSTGRES_PORT:-5432}"
+      # Client tools (pg_isready) and libpq default to this port.
+      PGPORT: "${POSTGRES_PORT:-5432}"
+      PGDATA: /var/lib/postgresql/data/pgdata
+      SHORTP2P_PG_SECRETS_DIR: /var/lib/shortp2p-secrets
+    volumes:
+      - "${PERSISTENCE_DIR}:/var/lib/postgresql/data"
+      - shortp2p-pg-secrets:/var/lib/shortp2p-secrets
+      - ./postgres-entrypoint.sh:/shortp2p/postgres-entrypoint.sh:ro
+      - ./postgres-generate-password.sh:/shortp2p/postgres-generate-password.sh:ro
+    # No ports: — listens on POSTGRES_PORT only on the Compose network (not published to host).
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER:-shortp2p}\" -d \"$${POSTGRES_DB:-shortp2p_messenger}\" -p \"$${POSTGRES_PORT:-5432}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+    restart: unless-stopped
+
+  messengerserver:
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # Enabled here; ConnectionString is built in entrypoint.sh from secrets volume
+      # (overrides appsettings Persistence defaults — never commit real passwords).
+      Persistence__Enabled: "true"
+      Persistence__ApplyMigrationsOnStartup: "true"
+      SHORTP2P_PG_SECRETS_DIR: /var/lib/shortp2p-secrets
+      SHORTP2P_PG_SECRETS_WAIT_SECS: "60"
+      SHORTP2P_PG_READY_WAIT_SECS: "90"
+      # Compose DNS name of the postgres service (private network, no host publish).
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "${POSTGRES_PORT:-5432}"
+      POSTGRES_DB: "${POSTGRES_DB:-shortp2p_messenger}"
+    volumes:
+      - shortp2p-pg-secrets:/var/lib/shortp2p-secrets:ro
+      # Certs bind comes from base compose (CERTS_DIR → /etc/shortp2p/certs).
+
+volumes:
+  shortp2p-pg-secrets:

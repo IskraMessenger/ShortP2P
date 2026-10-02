@@ -2,9 +2,8 @@
 #
 # Usage:
 #   .\scripts\server\docker\run.Development.ps1
-#   .\scripts\server\docker\run.Development.ps1 8080
-#   .\scripts\server\docker\run.Development.ps1 8080:51111
-#   .\scripts\server\docker\run.Development.ps1 -HostPort 8080 -InternalPort 51111
+#   .\scripts\server\docker\run.Development.ps1 8080 -MemoryMb 1024 -Cpus 2
+#   .\scripts\server\docker\run.Development.ps1 8080:51111 -MemoryMb 512 -Cpus 1
 #
 # Swagger: https://localhost:<HostPort>/swagger
 [CmdletBinding()]
@@ -15,6 +14,9 @@ param(
     [int] $HostPort = 0,
     [int] $InternalPort = 0,
     [string] $SelfHost = '',
+    [int] $MemoryMb = 0,
+    [int] $Cpus = 0,
+    [string] $CertsDir = '',
     [switch] $Help
 )
 
@@ -30,6 +32,11 @@ Mapping is HOST:INTERNAL. INTERNAL defaults to 51111.
   -PortMapping HOST[:INTERNAL]  e.g. 8080 or 8080:51111
   -HostPort N                   Host (external) port
   -InternalPort N               Container listen port (default 51111)
+  -MemoryMb N                   Memory limit in MB (min 512, default 512)
+  -Cpus N                       CPU cores (min 1, default 1)
+  -CertsDir PATH                Host TLS certs folder
+                                (default: `$env:APPUSER\ShortP2P\MessengerServer\certs
+                                 or LOCALAPPDATA if APPUSER unset)
   -SelfHost ADDR                Trust:SelfHost (default 127.0.0.1)
   -Help                         Show this help
 "@
@@ -87,14 +94,19 @@ function Set-PortMapping([string] $Value) {
 
 $repoRoot = Find-RepoRoot
 $scriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Join-Path $repoRoot 'scripts\server\docker' }
+. (Join-Path $scriptDir '_run-common.ps1')
 $composeFile = Join-Path $scriptDir 'docker-compose.Development.yml'
 $envFile = Join-Path $scriptDir '.env.Development'
 $envExample = Join-Path $scriptDir '.env.Development.example'
 
 $ResolvedHostPort = 51111
 $ResolvedInternalPort = 51111
+$ResolvedMemoryMb = 512
+$ResolvedCpus = 1
 if ($env:HOST_PORT -match '^\d+$') { $ResolvedHostPort = [int]$env:HOST_PORT }
 if ($env:INTERNAL_PORT -match '^\d+$') { $ResolvedInternalPort = [int]$env:INTERNAL_PORT }
+if ($env:MEMORY_MB -match '^\d+$') { $ResolvedMemoryMb = [int]$env:MEMORY_MB }
+if ($env:CPUS -match '^\d+$') { $ResolvedCpus = [int]$env:CPUS }
 
 $ResolvedSelfHost = if ($SelfHost) { $SelfHost } elseif ($env:TRUST_SELF_HOST) { $env:TRUST_SELF_HOST } else { '127.0.0.1' }
 
@@ -107,18 +119,49 @@ if ($InternalPort -ne 0) {
     if (-not (Test-Port $InternalPort)) { throw "Invalid internal port: $InternalPort" }
     $ResolvedInternalPort = $InternalPort
 }
+if ($MemoryMb -ne 0) {
+    if ($MemoryMb -lt 512) { throw "Memory must be at least 512 MB (got $MemoryMb)" }
+    $ResolvedMemoryMb = $MemoryMb
+}
+elseif ($ResolvedMemoryMb -lt 512) {
+    throw "MEMORY_MB must be at least 512 (got $ResolvedMemoryMb)"
+}
+if ($Cpus -ne 0) {
+    if ($Cpus -lt 1) { throw "CPUs must be at least 1 (got $Cpus)" }
+    $ResolvedCpus = $Cpus
+}
+elseif ($ResolvedCpus -lt 1) {
+    throw "CPUS must be at least 1 (got $ResolvedCpus)"
+}
 
 if (-not (Test-Path -LiteralPath $envFile) -and (Test-Path -LiteralPath $envExample)) {
     Copy-Item -LiteralPath $envExample -Destination $envFile
     Write-Host "Created $envFile from .env.Development.example"
 }
 
+$ResolvedCertsDir = if ($CertsDir) {
+    $CertsDir
+}
+elseif ($env:CERTS_DIR) {
+    $env:CERTS_DIR
+}
+else {
+    Get-DefaultCertsDir
+}
+New-Item -ItemType Directory -Path $ResolvedCertsDir -Force | Out-Null
+$ResolvedCertsDir = (Resolve-Path -LiteralPath $ResolvedCertsDir).Path
+
 $env:HOST_PORT = "$ResolvedHostPort"
 $env:INTERNAL_PORT = "$ResolvedInternalPort"
 $env:TRUST_SELF_HOST = $ResolvedSelfHost
+$env:MEMORY_MB = "$ResolvedMemoryMb"
+$env:CPUS = "$ResolvedCpus"
+$env:CERTS_DIR = $ResolvedCertsDir
 
 Write-Host "Environment:   Development"
 Write-Host "Port mapping:  ${ResolvedHostPort}:${ResolvedInternalPort} (host:internal)"
+Write-Host "Resources:     ${ResolvedMemoryMb} MB RAM, ${ResolvedCpus} CPU"
+Write-Host "TLS certs:     $ResolvedCertsDir → /etc/shortp2p/certs"
 Write-Host "Trust:SelfHost $ResolvedSelfHost  Trust:SelfPort $ResolvedHostPort"
 
 $composeArgs = @('-f', $composeFile)

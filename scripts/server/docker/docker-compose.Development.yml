@@ -18,9 +18,11 @@ services:
       Auth__SigningKey: "${AUTH_SIGNING_KEY:-}"
     volumes:
       - shortp2p-data-dev:/var/lib/shortp2p/data
-      - shortp2p-certs-dev:/etc/shortp2p/certs
+      # Host TLS certs (run scripts default: $APPUSER/ShortP2P/MessengerServer/certs).
+      - "${CERTS_DIR}:/etc/shortp2p/certs"
+    mem_limit: "${MEMORY_MB:-512}m"
+    cpus: ${CPUS:-1}
     restart: unless-stopped
 
 volumes:
   shortp2p-data-dev:
-  shortp2p-certs-dev:

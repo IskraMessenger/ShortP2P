@@ -5,10 +5,12 @@ using ShortP2P.MessengerServer.UseCases.Abstractions;
 namespace ShortP2P.MessengerServer.Api.Auth;
 
 /// <summary>
-/// Reads the ASP.NET Core HTTPS development certificate (or another CurrentUser My cert)
-/// to expose a SHA-256 fingerprint for client pinning.
+/// Resolves the HTTPS server certificate for client pinning fingerprint:
+/// prefer CurrentUser\My (ASP.NET Core HTTPS dev cert), else Kestrel PFX from config.
 /// </summary>
-public sealed class KestrelServerCertificateReader(ILogger<KestrelServerCertificateReader> logger)
+public sealed class KestrelServerCertificateReader(
+    IConfiguration configuration,
+    ILogger<KestrelServerCertificateReader> logger)
     : IServerCertificateReader
 {
     /// <summary>OID of the ASP.NET Core HTTPS development certificate extension.</summary>
@@ -35,7 +37,10 @@ public sealed class KestrelServerCertificateReader(ILogger<KestrelServerCertific
             NotAfterUtc: certificate.NotAfter.ToUniversalTime()));
     }
 
-    private X509Certificate2? TryResolveCertificate()
+    private X509Certificate2? TryResolveCertificate() =>
+        TryResolveFromCertificateStore() ?? TryResolveFromKestrelConfiguration();
+
+    private X509Certificate2? TryResolveFromCertificateStore()
     {
         try
         {
@@ -65,5 +70,38 @@ public sealed class KestrelServerCertificateReader(ILogger<KestrelServerCertific
             logger.LogDebug(ex, "Failed to resolve server certificate from CurrentUser\\My store.");
             return null;
         }
+    }
+
+    /// <summary>
+    /// Loads the PFX/PKCS#12 that Kestrel uses via
+    /// <c>Kestrel:Endpoints:*:Certificate:Path</c> / <c>Password</c>
+    /// (e.g. Docker entrypoint-generated or mounted cert).
+    /// </summary>
+    private X509Certificate2? TryResolveFromKestrelConfiguration()
+    {
+        foreach (var endpoint in configuration.GetSection("Kestrel:Endpoints").GetChildren())
+        {
+            var path = endpoint["Certificate:Path"];
+            if (string.IsNullOrWhiteSpace(path))
+                continue;
+
+            if (!File.Exists(path))
+            {
+                logger.LogDebug("Kestrel certificate path configured but file missing: {Path}", path);
+                continue;
+            }
+
+            var password = endpoint["Certificate:Password"];
+            try
+            {
+                return X509CertificateLoader.LoadPkcs12FromFile(path, password);
+            }
+            catch (Exception ex)
+            {
+                logger.LogDebug(ex, "Failed to load server certificate from Kestrel path {Path}.", path);
+            }
+        }
+
+        return null;
     }
 }

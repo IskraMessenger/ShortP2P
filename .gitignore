@@ -43,3 +43,5 @@ ehthumbs.db
 # Server Docker local env (copy from .env*.example)
 /scripts/server/docker/.env
 /scripts/server/docker/.env.Development
+/scripts/server/docker/.env.persistent.Release
+/scripts/server/docker/.env.persistent.Debug

@@ -75,18 +75,19 @@ sudo dpkg -i scripts/server/out/deb/shortp2p-messengerserver_0.1.0-1_amd64.deb
 
 Нужен Docker Engine + Compose v2. Сборка из корня репозитория (образ `shortp2p-messengerserver`).
 Маппинг портов `HOST:INTERNAL`, внутренний по умолчанию **51111**.
+Лимиты контейнера: память **≥ 512 МБ** (`MEMORY_MB`), CPU **≥ 1** (`CPUS`).
 
 ### Release (Production)
 
 ```bash
 ./scripts/server/docker/run.Release.sh
-./scripts/server/docker/run.Release.sh 8080              # 8080 -> 51111
-./scripts/server/docker/run.Release.sh 8080:51111
+./scripts/server/docker/run.Release.sh 8080 --memory 1024 --cpus 2
+./scripts/server/docker/run.Release.sh 8080:51111 -m 512 -c 1
 ```
 
 ```powershell
 .\scripts\server\docker\run.Release.ps1
-.\scripts\server\docker\run.Release.ps1 8080
+.\scripts\server\docker\run.Release.ps1 8080 -MemoryMb 1024 -Cpus 2
 ```
 
 | Что | Значение |
@@ -94,19 +95,19 @@ sudo dpkg -i scripts/server/out/deb/shortp2p-messengerserver_0.1.0-1_amd64.deb
 | Compose | `docker-compose.yml` |
 | Env | `.env.example` → `.env` |
 | `ASPNETCORE_ENVIRONMENT` | `Production` |
-| Volumes | `shortp2p-data`, `shortp2p-certs` |
+| Volumes | `shortp2p-data`; certs bind `CERTS_DIR` → `/etc/shortp2p/certs` |
 
 ### Development
 
 ```bash
 ./scripts/server/docker/run.Development.sh
-./scripts/server/docker/run.Development.sh 8080
-./scripts/server/docker/run.Development.sh 8080:51111
+./scripts/server/docker/run.Development.sh 8080 --memory 1024 --cpus 2
+./scripts/server/docker/run.Development.sh 8080:51111 -m 512 -c 1
 ```
 
 ```powershell
 .\scripts\server\docker\run.Development.ps1
-.\scripts\server\docker\run.Development.ps1 8080
+.\scripts\server\docker\run.Development.ps1 8080 -MemoryMb 1024 -Cpus 2
 ```
 
 Swagger: `https://localhost:<HOST_PORT>/swagger`
@@ -116,10 +117,68 @@ Swagger: `https://localhost:<HOST_PORT>/swagger`
 | Compose | `docker-compose.Development.yml` |
 | Env | `.env.Development.example` → `.env.Development` |
 | `ASPNETCORE_ENVIRONMENT` | `Development` |
-| Volumes | `shortp2p-data-dev`, `shortp2p-certs-dev` (отдельно от Production) |
+| Volumes | `shortp2p-data-dev`; certs bind `CERTS_DIR` → `/etc/shortp2p/certs` (отдельно от Production data) |
 
-Общее: `Trust:SelfPort` = `HOST_PORT`; listen в контейнере — `INTERNAL_PORT` (default `51111`).
+Общее: `Trust:SelfPort` = `HOST_PORT`; listen в контейнере — `INTERNAL_PORT` (default `51111`);
+`mem_limit` = `MEMORY_MB` (default `512`), `cpus` = `CPUS` (default `1`).
+TLS: `CERTS_DIR` → `/etc/shortp2p/certs` (default `%APPUSER%/ShortP2P/MessengerServer/certs`;
+`--certs-dir` / `-CertsDir` / env `CERTS_DIR`).
 При первом запуске entrypoint создаёт self-signed PFX и при необходимости `Auth:SigningKey` в data volume.
+
+### Persistent (PostgreSQL 11 companion)
+
+Включает `Persistence:Enabled=true` и контейнер `postgres:11` как **companion** `messengerserver`
+на общей Compose-сети (DNS `postgres`). Данные БД — bind-mount на хост; TLS-сертификаты —
+отдельный bind-mount (не внутри persistence).
+
+Каталог Postgres по умолчанию: `%APPUSER%/ShortP2P/MessengerServer/persistence` (Release) или `.../persistence-debug` (Debug).
+Каталог TLS по умолчанию: `%APPUSER%/ShortP2P/MessengerServer/certs` (общий для всех Docker run-скриптов).
+`APPUSER` → если не задан: `%LOCALAPPDATA%` (Windows) / `XDG_DATA_HOME` или `~/.local/share` (Unix).
+Можно указать явно: `--persistence-dir` / `-PersistenceDir`, `--certs-dir` / `-CertsDir`.
+TLS: `CERTS_DIR` → `/etc/shortp2p/certs` (entrypoint создаёт self-signed PFX при отсутствии).
+
+При первом запуске `run-persistent` скрипт **спрашивает** логин и пароль Postgres-админа:
+- логин: Enter → **`shortp2p`**;
+- пароль: Enter → автогенерация в контейнере (8–64 символа, латиница и цифры, есть верхний/нижний регистр и цифра);
+- заданный вручную пароль тоже должен удовлетворять этим правилам.
+
+Учётные данные сохраняются **только в docker-volume** `shortp2p-pg-secrets` (не на хосте).
+Порядок старта: `postgres` до `healthy`, затем `messengerserver` (`depends_on`);
+`entrypoint.sh` ждёт `credentials.env` и TCP `postgres:<POSTGRES_PORT>`, затем выставляет env:
+`Persistence__Enabled=true` и `Persistence__ConnectionString`
+(`Host=postgres;Port=<POSTGRES_PORT>;Username/Password` из secrets).
+Это перекрывает `appsettings.json` (`Enabled: false`, demo-пароль) — пароли в git не кладём.
+Повторный запуск (когда уже есть `pgdata`) промпт пропускает.
+
+Postgres **не публикуется на хост** — слушает `POSTGRES_PORT` (по умолчанию **5432**) только в Compose-сети.
+Порт меняется через `POSTGRES_PORT` в `.env.persistent.*`, env, или `--postgres-port` / `-PostgresPort`.
+`HOST_PORT`/`INTERNAL_PORT` относятся только к Messenger Server и не связаны с портом Postgres.
+Наружу открыт лишь порт Messenger Server.
+
+```bash
+./scripts/server/docker/run-persistent.Release.sh
+./scripts/server/docker/run-persistent.Release.sh 8080 --persistence-dir /data/shortp2p/pg
+./scripts/server/docker/run-persistent.Release.sh --certs-dir /etc/shortp2p-host/certs
+./scripts/server/docker/run-persistent.Release.sh --postgres-port 5433
+./scripts/server/docker/run-persistent.Debug.sh --memory 1024 --cpus 2
+```
+
+```powershell
+.\scripts\server\docker\run-persistent.Release.ps1
+.\scripts\server\docker\run-persistent.Release.ps1 -PersistenceDir 'D:\data\shortp2p\pg'
+.\scripts\server\docker\run-persistent.Release.ps1 -CertsDir 'D:\data\shortp2p\certs'
+.\scripts\server\docker\run-persistent.Release.ps1 -PostgresPort 5433
+.\scripts\server\docker\run-persistent.Debug.ps1 8080 -MemoryMb 1024 -Cpus 2
+```
+
+| Что | Значение |
+|-----|----------|
+| Overlay | `docker-compose.persistent.yml` (+ `docker-compose.yml` / `docker-compose.Development.yml`) |
+| Env | `.env.persistent.Release.example` / `.env.persistent.Debug.example` |
+| Postgres | `postgres:11` companion на Compose-сети; без host port; admin через промпт / auto; secrets volume |
+| Connection | `Host=postgres;Port=<POSTGRES_PORT>` (default `5432`) |
+| Host data | `PERSISTENCE_DIR` → `/var/lib/postgresql/data` |
+| Host certs | `CERTS_DIR` → `/etc/shortp2p/certs` (default `%APPUSER%/ShortP2P/MessengerServer/certs`) |
 
 ## После установки
 
@@ -137,5 +196,4 @@ RAM-кеш — нет. Inbox и blobs — только при Persistence + Post
 
 - В `Program.cs` нет `UseWindowsService()`. Служба Windows, скорее всего, упадёт с ошибкой 1053, пока хост не начнёт отвечать SCM.
 - Нет `UseSystemd()`. Unit специально `Type=simple` (не `notify`).
-- `KestrelServerCertificateReader` читает только хранилище `CurrentUser\My` (удобно для dev-сертификата Windows). Файловый PFX/PEM и fingerprint с него — отдельная доработка хоста. В Production-шаблоне секция `Kestrel:Endpoints:Https:Certificate` закомментирована.
-- HTTPS без сертификата на Linux не поднимется, пока не положите cert и хост не начнёт его читать.
+- `KestrelServerCertificateReader` сначала ищет cert в `CurrentUser\My` (ASP.NET HTTPS dev cert на Windows), иначе берёт PFX из `Kestrel:Endpoints:*:Certificate:Path` / `Password` (как Docker entrypoint).

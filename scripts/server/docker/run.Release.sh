@@ -4,16 +4,23 @@
 #
 # Usage:
 #   ./scripts/server/docker/run.Release.sh
-#   ./scripts/server/docker/run.Release.sh 8080
-#   ./scripts/server/docker/run.Release.sh 8080:51111
-#   ./scripts/server/docker/run.Release.sh --host-port 8080 --internal-port 51111
+#   ./scripts/server/docker/run.Release.sh 8080 --memory 1024 --cpus 2
+#   ./scripts/server/docker/run.Release.sh 8080:51111 -m 512 -c 1
 #
 # Mapping is HOST:INTERNAL. INTERNAL defaults to 51111.
+# Memory min 512 MB, CPUs min 1.
 set -euo pipefail
+
+script_dir="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=_run-common.sh
+. "$script_dir/_run-common.sh"
 
 HOST_PORT="${HOST_PORT:-51111}"
 INTERNAL_PORT="${INTERNAL_PORT:-51111}"
 TRUST_SELF_HOST="${TRUST_SELF_HOST:-127.0.0.1}"
+MEMORY_MB="${MEMORY_MB:-512}"
+CPUS="${CPUS:-1}"
+CERTS_DIR="${CERTS_DIR:-}"
 
 usage() {
   cat <<'EOF'
@@ -26,48 +33,15 @@ Start ShortP2P Messenger Server (Release/Production) via Docker Compose.
 
   -p, --host-port N      Host (external) port
   -i, --internal-port N  Container listen port (default 51111)
+  -m, --memory N         Memory limit in MB (min 512, default 512)
+  -c, --cpus N           CPU cores (min 1, default 1)
+  --certs-dir PATH       Host TLS certs folder
+                         (default: $APPUSER/ShortP2P/MessengerServer/certs)
   --self-host ADDR       Trust:SelfHost (default 127.0.0.1)
   -h, --help             Show this help
 EOF
 }
 
-is_port() {
-  [[ "$1" =~ ^[0-9]+$ ]] && [ "$1" -ge 1 ] && [ "$1" -le 65535 ]
-}
-
-parse_mapping() {
-  local value="$1"
-  if [[ "$value" == *:* ]]; then
-    local host="${value%%:*}"
-    local internal="${value#*:}"
-    if ! is_port "$host" || ! is_port "$internal"; then
-      echo "Invalid port mapping: $value (expected HOST:INTERNAL)" >&2
-      exit 1
-    fi
-    HOST_PORT="$host"
-    INTERNAL_PORT="$internal"
-  else
-    if ! is_port "$value"; then
-      echo "Invalid host port: $value" >&2
-      exit 1
-    fi
-    HOST_PORT="$value"
-  fi
-}
-
-find_repo_root() {
-  local dir="$1"
-  while [ -n "$dir" ] && [ "$dir" != "/" ]; do
-    if [ -f "$dir/src/Server/ShortP2P.MessengerServer.Api/ShortP2P.MessengerServer.Api.csproj" ]; then
-      printf '%s\n' "$dir"
-      return 0
-    fi
-    dir="$(dirname "$dir")"
-  done
-  return 1
-}
-
-script_dir="$(cd "$(dirname "$0")" && pwd)"
 repo_root="$(find_repo_root "$script_dir" || true)"
 if [ -z "${repo_root}" ]; then
   repo_root="$(find_repo_root "$(pwd)" || true)"
@@ -80,49 +54,25 @@ fi
 compose_file="$script_dir/docker-compose.yml"
 env_file="$script_dir/.env"
 
-while [ $# -gt 0 ]; do
-  case "$1" in
-    -h|--help) usage; exit 0 ;;
-    -p|--host-port)
-      shift
-      [ $# -gt 0 ] || { echo "--host-port requires a value" >&2; exit 1; }
-      parse_mapping "$1"
-      ;;
-    -i|--internal-port)
-      shift
-      [ $# -gt 0 ] || { echo "--internal-port requires a value" >&2; exit 1; }
-      if ! is_port "$1"; then
-        echo "Invalid internal port: $1" >&2
-        exit 1
-      fi
-      INTERNAL_PORT="$1"
-      ;;
-    --self-host)
-      shift
-      [ $# -gt 0 ] || { echo "--self-host requires a value" >&2; exit 1; }
-      TRUST_SELF_HOST="$1"
-      ;;
-    -*)
-      echo "Unknown option: $1" >&2
-      usage >&2
-      exit 1
-      ;;
-    *)
-      parse_mapping "$1"
-      ;;
-  esac
-  shift
-done
+parse_run_args "$@"
+
+if [ -z "$CERTS_DIR" ]; then
+  CERTS_DIR="$(default_certs_dir)"
+fi
+mkdir -p "$CERTS_DIR"
+CERTS_DIR="$(cd "$CERTS_DIR" && pwd)"
 
 if [ ! -f "$env_file" ] && [ -f "$script_dir/.env.example" ]; then
   cp "$script_dir/.env.example" "$env_file"
   echo "Created $env_file from .env.example"
 fi
 
-export HOST_PORT INTERNAL_PORT TRUST_SELF_HOST
+export HOST_PORT INTERNAL_PORT TRUST_SELF_HOST MEMORY_MB CPUS CERTS_DIR
 
 echo "Environment:   Production"
 echo "Port mapping:  ${HOST_PORT}:${INTERNAL_PORT} (host:internal)"
+echo "Resources:     ${MEMORY_MB} MB RAM, ${CPUS} CPU"
+echo "TLS certs:     $CERTS_DIR → /etc/shortp2p/certs"
 echo "Trust:SelfHost $TRUST_SELF_HOST  Trust:SelfPort $HOST_PORT"
 
 compose_args=( -f "$compose_file" )
@@ -135,6 +85,9 @@ fi
   HOST_PORT="$HOST_PORT" \
   INTERNAL_PORT="$INTERNAL_PORT" \
   TRUST_SELF_HOST="$TRUST_SELF_HOST" \
+  MEMORY_MB="$MEMORY_MB" \
+  CPUS="$CPUS" \
+  CERTS_DIR="$CERTS_DIR" \
   docker compose "${compose_args[@]}" up --build -d
 )
 

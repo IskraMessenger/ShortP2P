@@ -61,9 +61,76 @@ export Auth__LiteDb__ConnectionString="${Auth__LiteDb__ConnectionString:-Filenam
 export HostPowers__LiteDb__ConnectionString="${HostPowers__LiteDb__ConnectionString:-Filename=${DATA_DIR}/messenger-host-powers.litedb;Connection=shared}"
 export Trust__LiteDb__ConnectionString="${Trust__LiteDb__ConnectionString:-Filename=${DATA_DIR}/messenger-trust.litedb;Connection=shared}"
 
+# Persistent stack: override appsettings Persistence:* via ASP.NET env vars.
+# Credentials come only from the shared secrets volume (never from appsettings).
+# Compose private network: Host=postgres (service DNS), Port=POSTGRES_PORT.
+PG_SECRETS="${SHORTP2P_PG_SECRETS_DIR:-}"
+if [ -n "$PG_SECRETS" ]; then
+  cred_file="$PG_SECRETS/credentials.env"
+  # Safety wait: normally depends_on healthy already ordered postgres first.
+  wait_secs="${SHORTP2P_PG_SECRETS_WAIT_SECS:-60}"
+  waited=0
+  while [ ! -f "$cred_file" ]; do
+    if [ "$waited" -ge "$wait_secs" ]; then
+      echo "ERROR: Postgres credentials not found at $cred_file after ${wait_secs}s." >&2
+      echo "ERROR: Persistence cannot use appsettings defaults (localhost/postgres)." >&2
+      exit 1
+    fi
+    if [ "$waited" -eq 0 ]; then
+      echo "Waiting for Postgres credentials at $cred_file ..."
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+
+  # shellcheck disable=SC1090
+  set -a
+  # Clear any empty compose placeholders so sourced values always win.
+  unset POSTGRES_USER POSTGRES_PASSWORD 2>/dev/null || true
+  . "$cred_file"
+  set +a
+
+  if [ -z "${POSTGRES_USER:-}" ] || [ -z "${POSTGRES_PASSWORD:-}" ]; then
+    echo "ERROR: $cred_file must define non-empty POSTGRES_USER and POSTGRES_PASSWORD." >&2
+    exit 1
+  fi
+
+  # Compose DNS default: postgres. Override POSTGRES_HOST only if needed.
+  pg_host="${POSTGRES_HOST:-postgres}"
+  pg_port="${POSTGRES_PORT:-5432}"
+  pg_db="${POSTGRES_DB:-shortp2p_messenger}"
+
+  # Wait until Postgres accepts TCP on the configured port.
+  # Prefer 127.0.0.1 for /dev/tcp when host is localhost (avoid IPv6-only resolve).
+  tcp_host="$pg_host"
+  if [ "$tcp_host" = "localhost" ]; then
+    tcp_host="127.0.0.1"
+  fi
+  ready_secs="${SHORTP2P_PG_READY_WAIT_SECS:-90}"
+  ready_waited=0
+  while ! (echo >/dev/tcp/"${tcp_host}"/"${pg_port}") 2>/dev/null; do
+    if [ "$ready_waited" -ge "$ready_secs" ]; then
+      echo "ERROR: Postgres not reachable at ${pg_host}:${pg_port} after ${ready_secs}s." >&2
+      exit 1
+    fi
+    if [ "$ready_waited" -eq 0 ]; then
+      echo "Waiting for Postgres at ${pg_host}:${pg_port} ..."
+    fi
+    sleep 1
+    ready_waited=$((ready_waited + 1))
+  done
+
+  export Persistence__Enabled="${Persistence__Enabled:-true}"
+  export Persistence__ApplyMigrationsOnStartup="${Persistence__ApplyMigrationsOnStartup:-true}"
+  # Always overwrite — do not fall back to appsettings localhost/postgres/12345678.
+  export Persistence__ConnectionString="Host=${pg_host};Port=${pg_port};Database=${pg_db};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+  echo "  Persistence: Enabled=${Persistence__Enabled} Host=${pg_host} Port=${pg_port} Database=${pg_db} Username=${POSTGRES_USER}"
+fi
+
 echo "ShortP2P Messenger Server starting"
 echo "  listen (container): https://0.0.0.0:${INTERNAL_PORT}"
 echo "  publish (host map): ${HOST_PORT} -> ${INTERNAL_PORT}"
 echo "  Trust:SelfHost=${Trust__SelfHost:-127.0.0.1} Trust:SelfPort=${Trust__SelfPort}"
 
-exec dotnet ShortP2P.MessengerServer.Api.dll "$@"
+# No extra args: ASP.NET Core host takes configuration from env / appsettings only.
+exec dotnet ShortP2P.MessengerServer.Api.dll
