@@ -14,21 +14,35 @@ public sealed class ChatMediaOptions
     public const int SuperEconomyMaxDocumentBytes = 200 * 1024;
 
     /// <summary>Прежний лимит видео в ультраэкономии: раньше совпадал с лимитом документа.</summary>
-    public const int SuperEconomyMaxVideoBytes = 200 * 1024;
+    public const int SuperEconomyMaxVideoBytes = SuperEconomyMaxDocumentBytes;
 
     /// <summary>Прежний лимит голоса в ультраэкономии: раньше совпадал с лимитом документа.</summary>
-    public const int SuperEconomyMaxVoiceBytes = 200 * 1024;
+    public const int SuperEconomyMaxVoiceBytes = SuperEconomyMaxDocumentBytes;
 
-    /// <summary>Прежняя максимальная длительность голосовой записи в ультраэкономии (секунды).</summary>
-    public const int SuperEconomyMaxVoiceSeconds = 120;
+    /// <summary>Прежняя максимальная длительность голосовой записи в ультраэкономии: 2 минуты.</summary>
+    public const int SuperEconomyMaxVoiceSeconds = 2 * 60;
 
     /// <summary>Максимальная длительность голосовой записи вне суперэкономии: 10 минут.</summary>
     public const int MaxVoiceSeconds = 10 * 60;
 
-    private const int MinConfigurableImageBytes = 4096;
-    private const int MaxConfigurableImageBytes = 10 * 1024 * 1024;
+    /// <summary>Изображение вне суперэкономии: 10 МБ.</summary>
+    public const int DefaultMaxImageBytes = 10 * 1024 * 1024;
+
+    /// <summary>Документ вне суперэкономии: 20 МБ.</summary>
+    public const int DefaultMaxDocumentBytes = 20 * 1024 * 1024;
+
+    /// <summary>Видео вне суперэкономии: 30 МБ.</summary>
+    public const int DefaultMaxVideoBytes = 30 * 1024 * 1024;
+
+    /// <summary>Голос вне суперэкономии: 1 МБ = 1 * 1024 * 1024.</summary>
+    public const int DefaultMaxVoiceBytes = 1 * 1024 * 1024;
+
+    private const int MinConfigurableImageBytes = 4 * 1024;
+    private const int MaxConfigurableImageBytes = DefaultMaxImageBytes;
     private const int MinConfigurableDocumentBytes = 16 * 1024;
-    private const int MaxConfigurableDocumentBytes = 20 * 1024 * 1024;
+    private const int MaxConfigurableDocumentBytes = DefaultMaxDocumentBytes;
+    private const int MessengerBinarySlackBytes = 256 * 1024;
+    private const int BytesPerMegabyte = 1024 * 1024;
 
     private static readonly JsonSerializerOptions JsonRead = new()
     {
@@ -37,8 +51,8 @@ public sealed class ChatMediaOptions
         AllowTrailingCommas = true
     };
 
-    /// <summary>Максимальный размер изображения вне суперэкономии: 10 МБ = 10×1024×1024 байт.</summary>
-    public int MaxImageBytes { get; set; } = 10 * 1024 * 1024;
+    /// <summary>Максимальный размер изображения вне суперэкономии: <see cref="DefaultMaxImageBytes"/>.</summary>
+    public int MaxImageBytes { get; set; } = DefaultMaxImageBytes;
 
     /// <summary>Разрешённые MIME-типы изображений.</summary>
     public List<string> AllowedImageMimeTypes { get; set; } =
@@ -48,18 +62,18 @@ public sealed class ChatMediaOptions
         "image/gif"
     ];
 
-    /// <summary>Максимальный размер документа вне суперэкономии: 20 МБ = 20×1024×1024 байт.</summary>
-    public int MaxDocumentBytes { get; set; } = 20 * 1024 * 1024;
+    /// <summary>Максимальный размер документа вне суперэкономии: <see cref="DefaultMaxDocumentBytes"/>.</summary>
+    public int MaxDocumentBytes { get; set; } = DefaultMaxDocumentBytes;
 
-    /// <summary>Максимальный размер видео вне суперэкономии: 30 МБ = 30×1024×1024 байт.</summary>
-    public int MaxVideoBytes { get; set; } = 30 * 1024 * 1024;
+    /// <summary>Максимальный размер видео вне суперэкономии: <see cref="DefaultMaxVideoBytes"/>.</summary>
+    public int MaxVideoBytes { get; set; } = DefaultMaxVideoBytes;
 
-    /// <summary>Максимальный размер голосового сообщения вне суперэкономии: 1 МБ = 1024×1024 = 1_048_576 байт.</summary>
-    public int MaxVoiceBytes { get; set; } = 1_048_576;
+    /// <summary>Максимальный размер голосового сообщения вне суперэкономии: <see cref="DefaultMaxVoiceBytes"/>.</summary>
+    public int MaxVoiceBytes { get; set; } = DefaultMaxVoiceBytes;
 
     /// <summary>Верхняя граница размера расшифрованного бинарного кадра чата (крупнейшее вложение + заголовок wire).</summary>
     public int MaxMessengerBinaryBytes =>
-        Math.Max(MaxVideoBytes, Math.Max(MaxDocumentBytes, MaxImageBytes)) + 256 * 1024;
+        Math.Max(MaxVideoBytes, Math.Max(MaxDocumentBytes, MaxImageBytes)) + MessengerBinarySlackBytes;
 
     /// <summary>Разрешённые MIME для вложений-документов.</summary>
     public List<string> AllowedDocumentMimeTypes { get; set; } =
@@ -109,9 +123,8 @@ public sealed class ChatMediaOptions
 
     public static string FormatByteLimit(int bytes)
     {
-        const int mib = 1024 * 1024;
-        if (bytes >= mib && bytes % mib == 0)
-            return $"{bytes / mib} МБ";
+        if (bytes >= BytesPerMegabyte && bytes % BytesPerMegabyte == 0)
+            return $"{bytes / BytesPerMegabyte} МБ";
         return $"{(bytes + 1023) / 1024} КБ";
     }
 

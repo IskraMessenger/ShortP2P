@@ -73,7 +73,7 @@ public class BlobUseCaseTests
     [Fact]
     public void MaxCiphertextBytes_CoversThirtyMebibyteVideoPlusEnvelope()
     {
-        Assert.Equal(32 * 1024 * 1024, PutBlobUseCase.MaxCiphertextBytes);
+        Assert.Equal(30 * 1024 * 1024 + 2 * 1024 * 1024, PutBlobUseCase.MaxCiphertextBytes);
     }
 
     [Fact]
