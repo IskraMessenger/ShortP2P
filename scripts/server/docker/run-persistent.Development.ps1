@@ -1,9 +1,9 @@
-# Start ShortP2P Messenger Server (Debug/Development) with PostgreSQL 11 persistence.
+# Start ShortP2P Messenger Server (Development) with PostgreSQL 11 persistence.
 #
 # Usage:
-#   .\scripts\server\docker\run-persistent.Debug.ps1
-#   .\scripts\server\docker\run-persistent.Debug.ps1 8080 -MemoryMb 1024 -Cpus 2
-#   .\scripts\server\docker\run-persistent.Debug.ps1 -PersistenceDir 'D:\data\shortp2p\pg-debug'
+#   .\scripts\server\docker\run-persistent.Development.ps1
+#   .\scripts\server\docker\run-persistent.Development.ps1 8080 -MemoryMb 1024 -Cpus 2
+#   .\scripts\server\docker\run-persistent.Development.ps1 -PersistenceDir 'D:\data\shortp2p\pg-dev'
 #
 # Swagger: https://localhost:<HostPort>/swagger
 [CmdletBinding()]
@@ -26,9 +26,9 @@ $ErrorActionPreference = 'Stop'
 
 function Show-Usage {
     @"
-Usage: run-persistent.Debug.ps1 [[-]PortMapping] HOST[:INTERNAL] [options]
+Usage: run-persistent.Development.ps1 [[-]PortMapping] HOST[:INTERNAL] [options]
 
-Start Debug/Development Messenger Server with Persistence (PostgreSQL 11).
+Start Development Messenger Server with Persistence (PostgreSQL 11).
 
   -PortMapping HOST[:INTERNAL]  e.g. 8080 or 8080:51111
   -HostPort N                   Host (external) port
@@ -36,7 +36,7 @@ Start Debug/Development Messenger Server with Persistence (PostgreSQL 11).
   -MemoryMb N                   Memory limit in MB (min 512, default 512)
   -Cpus N                       CPU cores (min 1, default 1)
   -PersistenceDir PATH          Host folder for Postgres data
-                                (default: `$env:APPUSER\ShortP2P\MessengerServer\persistence-debug
+                                (default: `$env:APPUSER\ShortP2P\MessengerServer\persistence-development
                                  or LOCALAPPDATA if APPUSER unset)
   -CertsDir PATH                Host TLS certs folder
                                 (default: `$env:APPUSER\ShortP2P\MessengerServer\certs
@@ -102,8 +102,8 @@ $scriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Join-Path $repoRoot 'sc
 . (Join-Path $scriptDir '_run-common.ps1')
 $baseCompose = Join-Path $scriptDir 'docker-compose.Development.yml'
 $persistCompose = Join-Path $scriptDir 'docker-compose.persistent.yml'
-$envFile = Join-Path $scriptDir '.env.persistent.Debug'
-$envExample = Join-Path $scriptDir '.env.persistent.Debug.example'
+$envFile = Join-Path $scriptDir '.env.persistent.Development'
+$envExample = Join-Path $scriptDir '.env.persistent.Development.example'
 
 $ResolvedHostPort = 51111
 $ResolvedInternalPort = 51111
@@ -157,7 +157,7 @@ elseif ($env:PERSISTENCE_DIR) {
     $env:PERSISTENCE_DIR
 }
 else {
-    Get-DefaultPersistenceDir -Suffix 'persistence-debug'
+    Get-DefaultPersistenceDir -Suffix 'persistence-development'
 }
 
 $ResolvedCertsDir = if ($CertsDir) {
@@ -177,7 +177,7 @@ $ResolvedCertsDir = (Resolve-Path -LiteralPath $ResolvedCertsDir).Path
 
 if (-not (Test-Path -LiteralPath $envFile) -and (Test-Path -LiteralPath $envExample)) {
     Copy-Item -LiteralPath $envExample -Destination $envFile
-    Write-Host "Created $envFile from .env.persistent.Debug.example"
+    Write-Host "Created $envFile from .env.persistent.Development.example"
 }
 
 Prompt-PostgresAdminCredentials -PersistenceDir $ResolvedPersistenceDir
@@ -192,7 +192,7 @@ $env:CERTS_DIR = $ResolvedCertsDir
 $env:POSTGRES_PORT = "$ResolvedPostgresPort"
 if (-not $env:POSTGRES_USER) { $env:POSTGRES_USER = 'shortp2p' }
 
-Write-Host "Environment:   Development/Debug (persistent)"
+Write-Host "Environment:   Development (persistent)"
 Write-Host "Port mapping:  ${ResolvedHostPort}:${ResolvedInternalPort} (host:internal)"
 Write-Host "Resources:     ${ResolvedMemoryMb} MB RAM, ${ResolvedCpus} CPU"
 Write-Host "Postgres data: $ResolvedPersistenceDir"
@@ -202,6 +202,7 @@ Write-Host "Postgres admin: $($env:POSTGRES_USER)"
 Write-Host "Trust:SelfHost $ResolvedSelfHost  Trust:SelfPort $ResolvedHostPort"
 
 $composeArgs = @('-f', $baseCompose, '-f', $persistCompose)
+$composeArgs = @(Add-DockerPlatformComposeArgs -ComposeArgs $composeArgs -ScriptDir $scriptDir)
 if (Test-Path -LiteralPath $envFile) {
     $composeArgs += @('--env-file', $envFile)
 }

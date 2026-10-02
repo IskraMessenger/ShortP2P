@@ -1,0 +1,6 @@
+# Force linux/arm64 for Raspberry Pi / aarch64 builds and runs.
+# Applied automatically when DOCKER_PLATFORM=linux/arm64 (see run-arm64*.*).
+# Postgres (persistent overlay) inherits the same arch via DOCKER_DEFAULT_PLATFORM.
+services:
+  messengerserver:
+    platform: linux/arm64

@@ -92,6 +92,10 @@ echo "Postgres admin: ${POSTGRES_USER:-shortp2p}"
 echo "Trust:SelfHost $TRUST_SELF_HOST  Trust:SelfPort $HOST_PORT"
 
 compose_args=( -f "$base_compose" -f "$persist_compose" )
+platform_file="$(docker_platform_compose_file "$script_dir")"
+if [ -n "$platform_file" ]; then
+  compose_args+=( -f "$platform_file" )
+fi
 if [ -f "$env_file" ]; then
   compose_args+=( --env-file "$env_file" )
 fi

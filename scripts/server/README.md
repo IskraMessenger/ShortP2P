@@ -131,7 +131,7 @@ TLS: `CERTS_DIR` → `/etc/shortp2p/certs` (default `%APPUSER%/ShortP2P/Messenge
 на общей Compose-сети (DNS `postgres`). Данные БД — bind-mount на хост; TLS-сертификаты —
 отдельный bind-mount (не внутри persistence).
 
-Каталог Postgres по умолчанию: `%APPUSER%/ShortP2P/MessengerServer/persistence` (Release) или `.../persistence-debug` (Debug).
+Каталог Postgres по умолчанию: `%APPUSER%/ShortP2P/MessengerServer/persistence` (Release) или `.../persistence-development` (Development).
 Каталог TLS по умолчанию: `%APPUSER%/ShortP2P/MessengerServer/certs` (общий для всех Docker run-скриптов).
 `APPUSER` → если не задан: `%LOCALAPPDATA%` (Windows) / `XDG_DATA_HOME` или `~/.local/share` (Unix).
 Можно указать явно: `--persistence-dir` / `-PersistenceDir`, `--certs-dir` / `-CertsDir`.
@@ -160,7 +160,7 @@ Postgres **не публикуется на хост** — слушает `POSTG
 ./scripts/server/docker/run-persistent.Release.sh 8080 --persistence-dir /data/shortp2p/pg
 ./scripts/server/docker/run-persistent.Release.sh --certs-dir /etc/shortp2p-host/certs
 ./scripts/server/docker/run-persistent.Release.sh --postgres-port 5433
-./scripts/server/docker/run-persistent.Debug.sh --memory 1024 --cpus 2
+./scripts/server/docker/run-persistent.Development.sh --memory 1024 --cpus 2
 ```
 
 ```powershell
@@ -168,17 +168,52 @@ Postgres **не публикуется на хост** — слушает `POSTG
 .\scripts\server\docker\run-persistent.Release.ps1 -PersistenceDir 'D:\data\shortp2p\pg'
 .\scripts\server\docker\run-persistent.Release.ps1 -CertsDir 'D:\data\shortp2p\certs'
 .\scripts\server\docker\run-persistent.Release.ps1 -PostgresPort 5433
-.\scripts\server\docker\run-persistent.Debug.ps1 8080 -MemoryMb 1024 -Cpus 2
+.\scripts\server\docker\run-persistent.Development.ps1 8080 -MemoryMb 1024 -Cpus 2
 ```
 
 | Что | Значение |
 |-----|----------|
 | Overlay | `docker-compose.persistent.yml` (+ `docker-compose.yml` / `docker-compose.Development.yml`) |
-| Env | `.env.persistent.Release.example` / `.env.persistent.Debug.example` |
+| Env | `.env.persistent.Release.example` / `.env.persistent.Development.example` |
 | Postgres | `postgres:11` companion на Compose-сети; без host port; admin через промпт / auto; secrets volume |
 | Connection | `Host=postgres;Port=<POSTGRES_PORT>` (default `5432`) |
 | Host data | `PERSISTENCE_DIR` → `/var/lib/postgresql/data` |
 | Host certs | `CERTS_DIR` → `/etc/shortp2p/certs` (default `%APPUSER%/ShortP2P/MessengerServer/certs`) |
+
+### Raspberry Pi / ARM64
+
+Thin wrappers force `DOCKER_PLATFORM=linux/arm64` and `DOCKER_DEFAULT_PLATFORM=linux/arm64`,
+then call the same run scripts / compose files above (plus overlay `docker-compose.arm64.yml`
+with `platform: linux/arm64` on `messengerserver`). Same CLI as the non-arm64 scripts
+(ports, memory, cpus, certs, persistence, postgres credentials).
+
+**On the Pi** (64-bit OS, `uname -m` → `aarch64` / `arm64`) use the `.sh` scripts:
+
+```bash
+./scripts/server/docker/run-arm64.Release.sh
+./scripts/server/docker/run-arm64.Release.sh 8080 --memory 1024 --cpus 2
+./scripts/server/docker/run-arm64.Development.sh
+./scripts/server/docker/run-arm64-persistent.Release.sh --persistence-dir /data/shortp2p/pg
+./scripts/server/docker/run-arm64-persistent.Development.sh --memory 1024 --cpus 2
+```
+
+**From Windows** (buildx / QEMU cross-build, then run or push):
+
+```powershell
+.\scripts\server\docker\run-arm64.Release.ps1
+.\scripts\server\docker\run-arm64.Development.ps1 8080 -MemoryMb 1024 -Cpus 2
+.\scripts\server\docker\run-arm64-persistent.Release.ps1 -PersistenceDir 'D:\data\shortp2p\pg'
+.\scripts\server\docker\run-arm64-persistent.Development.ps1
+```
+
+Requirements / notes:
+
+- Prefer a **64-bit** host (`aarch64`). Scripts fail with a clear message on 32-bit ARM
+  (`armv7l` / `armhf`). Use [Raspberry Pi OS 64-bit](https://www.raspberrypi.com/software/),
+  or build/push from an aarch64 machine / Docker buildx with QEMU.
+- Docker Engine + Compose v2 on the Pi; first build can take a while on low-RAM boards
+  (raise `--memory` if needed, default still 512 MB).
+- Persistent mode also pulls `postgres:11` for `linux/arm64` via `DOCKER_DEFAULT_PLATFORM`.
 
 ## После установки
 

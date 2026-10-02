@@ -2,6 +2,48 @@
 # Shared helpers for run*.sh scripts.
 # Sourced only — not executed directly.
 
+# Fail clearly on 32-bit ARM when targeting linux/arm64 natively.
+require_arm64_capable_host() {
+  local arch
+  arch="$(uname -m 2>/dev/null || true)"
+  case "$arch" in
+    armv6l|armv7l|armhf)
+      echo "ARM64 Docker images require a 64-bit host (aarch64 / arm64)." >&2
+      echo "This host reports '$arch' (32-bit ARM)." >&2
+      echo "Use Raspberry Pi OS 64-bit (or another aarch64 OS), or build/push from" >&2
+      echo "an aarch64 machine / Docker buildx with QEMU emulation." >&2
+      return 1
+      ;;
+  esac
+  return 0
+}
+
+# Export DOCKER_PLATFORM / DOCKER_DEFAULT_PLATFORM for compose build & run.
+# Usage: export_docker_platform linux/arm64
+export_docker_platform() {
+  local platform="${1:-}"
+  if [ -z "$platform" ]; then
+    echo "export_docker_platform requires a platform (e.g. linux/arm64)" >&2
+    return 1
+  fi
+  export DOCKER_PLATFORM="$platform"
+  export DOCKER_DEFAULT_PLATFORM="$platform"
+}
+
+# Path to platform compose overlay when DOCKER_PLATFORM is set; else empty.
+# Callers: platform_file="$(docker_platform_compose_file "$script_dir")"
+#          [ -n "$platform_file" ] && compose_args+=( -f "$platform_file" )
+docker_platform_compose_file() {
+  local dir="${1:-.}"
+  case "${DOCKER_PLATFORM:-}" in
+    linux/arm64)
+      if [ -f "$dir/docker-compose.arm64.yml" ]; then
+        printf '%s\n' "$dir/docker-compose.arm64.yml"
+      fi
+      ;;
+  esac
+}
+
 is_port() {
   [[ "$1" =~ ^[0-9]+$ ]] && [ "$1" -ge 1 ] && [ "$1" -le 65535 ]
 }

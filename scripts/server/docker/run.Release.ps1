@@ -164,6 +164,7 @@ Write-Host "TLS certs:     $ResolvedCertsDir → /etc/shortp2p/certs"
 Write-Host "Trust:SelfHost $ResolvedSelfHost  Trust:SelfPort $ResolvedHostPort"
 
 $composeArgs = @('-f', $composeFile)
+$composeArgs = @(Add-DockerPlatformComposeArgs -ComposeArgs $composeArgs -ScriptDir $scriptDir)
 if (Test-Path -LiteralPath $envFile) {
     $composeArgs += @('--env-file', $envFile)
 }

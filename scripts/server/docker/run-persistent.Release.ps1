@@ -200,6 +200,7 @@ Write-Host "Postgres admin: $($env:POSTGRES_USER)"
 Write-Host "Trust:SelfHost $ResolvedSelfHost  Trust:SelfPort $ResolvedHostPort"
 
 $composeArgs = @('-f', $baseCompose, '-f', $persistCompose)
+$composeArgs = @(Add-DockerPlatformComposeArgs -ComposeArgs $composeArgs -ScriptDir $scriptDir)
 if (Test-Path -LiteralPath $envFile) {
     $composeArgs += @('--env-file', $envFile)
 }

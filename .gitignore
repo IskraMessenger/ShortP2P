@@ -44,4 +44,4 @@ ehthumbs.db
 /scripts/server/docker/.env
 /scripts/server/docker/.env.Development
 /scripts/server/docker/.env.persistent.Release
-/scripts/server/docker/.env.persistent.Debug
+/scripts/server/docker/.env.persistent.Development

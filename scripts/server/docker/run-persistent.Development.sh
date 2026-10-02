@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Start ShortP2P Messenger Server (Debug/Development) with PostgreSQL 11 persistence.
+# Start ShortP2P Messenger Server (Development) with PostgreSQL 11 persistence.
 #
 # Usage:
-#   ./scripts/server/docker/run-persistent.Debug.sh
-#   ./scripts/server/docker/run-persistent.Debug.sh 8080 --memory 1024 --cpus 2
-#   ./scripts/server/docker/run-persistent.Debug.sh --persistence-dir /data/shortp2p/pg-debug
+#   ./scripts/server/docker/run-persistent.Development.sh
+#   ./scripts/server/docker/run-persistent.Development.sh 8080 --memory 1024 --cpus 2
+#   ./scripts/server/docker/run-persistent.Development.sh --persistence-dir /data/shortp2p/pg-dev
 #
 # Swagger: https://localhost:<HOST_PORT>/swagger
 set -euo pipefail
@@ -24,9 +24,9 @@ POSTGRES_PORT="${POSTGRES_PORT:-5432}"
 
 usage() {
   cat <<'EOF'
-Usage: run-persistent.Debug.sh [HOST_PORT | HOST:INTERNAL] [options]
+Usage: run-persistent.Development.sh [HOST_PORT | HOST:INTERNAL] [options]
 
-Start Debug/Development Messenger Server with Persistence (PostgreSQL 11).
+Start Development Messenger Server with Persistence (PostgreSQL 11).
 
   HOST_PORT / HOST:INTERNAL   Port mapping (internal default 51111)
   -p, --host-port N           Host port
@@ -34,7 +34,7 @@ Start Debug/Development Messenger Server with Persistence (PostgreSQL 11).
   -m, --memory N              Memory limit MB (min 512)
   -c, --cpus N                CPU cores (min 1)
   --persistence-dir PATH      Host folder for Postgres data
-                              (default: $APPUSER/ShortP2P/MessengerServer/persistence-debug)
+                              (default: $APPUSER/ShortP2P/MessengerServer/persistence-development)
   --certs-dir PATH            Host TLS certs folder
                               (default: $APPUSER/ShortP2P/MessengerServer/certs)
   --postgres-port N           Postgres listen/connect port (default 5432; Compose network only)
@@ -54,12 +54,12 @@ fi
 
 base_compose="$script_dir/docker-compose.Development.yml"
 persist_compose="$script_dir/docker-compose.persistent.yml"
-env_file="$script_dir/.env.persistent.Debug"
+env_file="$script_dir/.env.persistent.Development"
 
 parse_run_args "$@"
 
 if [ -z "$PERSISTENCE_DIR" ]; then
-  PERSISTENCE_DIR="$(default_persistence_dir persistence-debug)"
+  PERSISTENCE_DIR="$(default_persistence_dir persistence-development)"
 fi
 if [ -z "$CERTS_DIR" ]; then
   CERTS_DIR="$(default_certs_dir)"
@@ -69,9 +69,9 @@ mkdir -p "$PERSISTENCE_DIR" "$CERTS_DIR"
 PERSISTENCE_DIR="$(cd "$PERSISTENCE_DIR" && pwd)"
 CERTS_DIR="$(cd "$CERTS_DIR" && pwd)"
 
-if [ ! -f "$env_file" ] && [ -f "$script_dir/.env.persistent.Debug.example" ]; then
-  cp "$script_dir/.env.persistent.Debug.example" "$env_file"
-  echo "Created $env_file from .env.persistent.Debug.example"
+if [ ! -f "$env_file" ] && [ -f "$script_dir/.env.persistent.Development.example" ]; then
+  cp "$script_dir/.env.persistent.Development.example" "$env_file"
+  echo "Created $env_file from .env.persistent.Development.example"
 fi
 
 prompt_postgres_admin_credentials "$PERSISTENCE_DIR"
@@ -82,7 +82,7 @@ if [ -n "${POSTGRES_PASSWORD:-}" ]; then
   export POSTGRES_PASSWORD
 fi
 
-echo "Environment:   Development/Debug (persistent)"
+echo "Environment:   Development (persistent)"
 echo "Port mapping:  ${HOST_PORT}:${INTERNAL_PORT} (host:internal)"
 echo "Resources:     ${MEMORY_MB} MB RAM, ${CPUS} CPU"
 echo "Postgres data: $PERSISTENCE_DIR"
@@ -92,6 +92,10 @@ echo "Postgres admin: ${POSTGRES_USER:-shortp2p}"
 echo "Trust:SelfHost $TRUST_SELF_HOST  Trust:SelfPort $HOST_PORT"
 
 compose_args=( -f "$base_compose" -f "$persist_compose" )
+platform_file="$(docker_platform_compose_file "$script_dir")"
+if [ -n "$platform_file" ]; then
+  compose_args+=( -f "$platform_file" )
+fi
 if [ -f "$env_file" ]; then
   compose_args+=( --env-file "$env_file" )
 fi

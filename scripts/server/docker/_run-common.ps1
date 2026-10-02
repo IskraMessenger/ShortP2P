@@ -1,6 +1,85 @@
 # Shared helpers for run*.ps1 scripts.
 # Dot-sourced only - not executed directly.
 
+# Fail clearly on 32-bit ARM when targeting linux/arm64 natively.
+# On Windows/amd64 this is a no-op (buildx/QEMU cross-build is expected).
+function Test-Arm64CapableHost {
+    $arch = $null
+    try {
+        $uname = Get-Command uname -ErrorAction SilentlyContinue
+        if ($uname) {
+            $arch = (& uname -m 2>$null | Out-String).Trim()
+        }
+    }
+    catch { }
+
+    if (-not $arch) {
+        try {
+            $osArch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+            if ($osArch -eq 'Arm' -or $osArch -eq 'Armv6' -or $osArch -eq 'Armv7') {
+                $arch = $osArch
+            }
+        }
+        catch { }
+    }
+
+    if ($arch -match '^(armv6l|armv7l|armhf|Arm|Armv6|Armv7)$') {
+        throw @"
+ARM64 Docker images require a 64-bit host (aarch64 / arm64).
+This host reports '$arch' (32-bit ARM).
+Use Raspberry Pi OS 64-bit (or another aarch64 OS), or build/push from an aarch64 machine / Docker buildx with QEMU emulation.
+"@
+    }
+}
+
+# Set DOCKER_PLATFORM / DOCKER_DEFAULT_PLATFORM for compose build & run.
+function Set-DockerPlatform {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $Platform
+    )
+    $env:DOCKER_PLATFORM = $Platform
+    $env:DOCKER_DEFAULT_PLATFORM = $Platform
+}
+
+# Initialize linux/arm64 for Raspberry Pi / cross-build via buildx.
+function Initialize-DockerArm64Platform {
+    Test-Arm64CapableHost
+    Set-DockerPlatform -Platform 'linux/arm64'
+}
+
+# Path to platform compose overlay when DOCKER_PLATFORM is set; else $null.
+function Get-DockerPlatformComposeFile {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $ScriptDir
+    )
+    if ($env:DOCKER_PLATFORM -eq 'linux/arm64') {
+        $file = Join-Path $ScriptDir 'docker-compose.arm64.yml'
+        if (Test-Path -LiteralPath $file) {
+            return $file
+        }
+    }
+    return $null
+}
+
+# Append -f <platform-overlay> to compose args when DOCKER_PLATFORM is set.
+function Add-DockerPlatformComposeArgs {
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [string[]] $ComposeArgs,
+
+        [Parameter(Mandatory = $true)]
+        [string] $ScriptDir
+    )
+    $platformFile = Get-DockerPlatformComposeFile -ScriptDir $ScriptDir
+    if ($platformFile) {
+        return @($ComposeArgs + @('-f', $platformFile))
+    }
+    return $ComposeArgs
+}
+
 function Get-AppUserRoot {
     if ($env:APPUSER) {
         return $env:APPUSER
