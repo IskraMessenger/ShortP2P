@@ -43,6 +43,9 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
     private readonly SemaphoreSlim _ingestGate = new(1, 1);
     private readonly ConcurrentDictionary<long, string> _pendingForwardProfileNonces = new();
 
+    /// <summary>SHO-10: peer network id → messenger server id chosen after UDP establish failed.</summary>
+    private readonly ConcurrentDictionary<string, int> _preferredServerByPeer = new(StringComparer.Ordinal);
+
     private CancellationTokenSource? _cts;
     private Task? _longPollLoop;
     private Task? _pingLoop;
@@ -272,6 +275,103 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    ///     One trusted server in preference order (healthier first).
+    ///     <see cref="SubscriberPresent"/> is registration on that server; online is preferred when several match.
+    /// </summary>
+    public readonly record struct HostingServerCandidate(int ServerId, bool SubscriberPresent, bool SubscriberOnline);
+
+    /// <summary>
+    ///     Picks the server that actually lists the subscriber. Online beats offline.
+    ///     Among the same presence, the earlier entry wins (caller passes rank order).
+    /// </summary>
+    public static int? SelectHostingServerId(IReadOnlyList<HostingServerCandidate> rankedByPreference)
+    {
+        Require.NotNull(rankedByPreference);
+        int? presentOffline = null;
+        foreach (var candidate in rankedByPreference)
+        {
+            if (!candidate.SubscriberPresent)
+                continue;
+            if (candidate.SubscriberOnline)
+                return candidate.ServerId;
+            presentOffline ??= candidate.ServerId;
+        }
+
+        return presentOffline;
+    }
+
+    /// <summary>
+    ///     SHO-10 workaround. Lists available trusted servers, keeps the one that has
+    ///     <paramref name="peerNetworkId"/>, republishes ChatRequest (invite) there, and pins later
+    ///     sends to that server. Receive stays on the existing long-poll, which already includes it.
+    /// </summary>
+    public async Task<MessengerServerEntity?> TrySwitchPeerToHostingServerAsync(
+        string peerNetworkId,
+        CancellationToken cancellationToken = default)
+    {
+        var user = _auth.CurrentUser;
+        if (user == null)
+            return null;
+
+        var peerId = ChatRepository.CanonicalPeerNetworkId(peerNetworkId);
+        if (peerId.Length == 0 ||
+            string.Equals(peerId, ChatRepository.CanonicalPeerNetworkId(user.NetworkIdShort), StringComparison.Ordinal))
+            return null;
+
+        var ready = await _manager.EnsureAllActiveReadyAsync(cancellationToken).ConfigureAwait(false);
+        var ordered = new List<MessengerServerConnection>(_manager.FilterAvailable(ready));
+        foreach (var conn in ready)
+        {
+            if (_manager.AllowsTraffic(conn) && !ordered.Contains(conn))
+                ordered.Add(conn);
+        }
+
+        if (ordered.Count == 0)
+        {
+            _logger.LogInformation(
+                "UDP fallback: no available messenger servers while looking for peer {PeerId}", peerId);
+            return null;
+        }
+
+        var selection = new List<HostingServerCandidate>(ordered.Count);
+        var byId = new Dictionary<int, MessengerServerConnection>();
+        foreach (var conn in ordered)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var presence = await FindPeerPresenceAsync(conn, peerId, cancellationToken).ConfigureAwait(false);
+            selection.Add(new HostingServerCandidate(
+                conn.Entity.Id,
+                presence != null,
+                presence?.IsOnline == true));
+            byId[conn.Entity.Id] = conn;
+        }
+
+        var chosenId = SelectHostingServerId(selection);
+        if (chosenId == null || !byId.TryGetValue(chosenId.Value, out var chosen))
+        {
+            _logger.LogInformation(
+                "UDP fallback: peer {PeerId} is not registered on any available messenger server", peerId);
+            return null;
+        }
+
+        _preferredServerByPeer[peerId] = chosen.Entity.Id;
+        await PublishChatRequestOnAsync(chosen, peerId, cancellationToken).ConfigureAwait(false);
+        _logger.LogInformation(
+            "UDP fallback: peer {PeerId} switched to messenger server {BaseUrl}",
+            peerId, chosen.Entity.BaseUrl);
+        return chosen.Entity;
+    }
+
+    /// <summary>Drops the SHO-10 server pin so the next send is not forced onto one messenger server.</summary>
+    public void ClearPreferredServer(string peerNetworkId)
+    {
+        var peerId = ChatRepository.CanonicalPeerNetworkId(peerNetworkId);
+        if (peerId.Length == 0)
+            return;
+        _preferredServerByPeer.TryRemove(peerId, out _);
+    }
+
     /// <summary>Publish (or refresh) our public key to the peer via all ready servers.</summary>
     public async Task PublishChatRequestAsync(string targetNetworkId, CancellationToken cancellationToken = default)
     {
@@ -290,23 +390,36 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
         {
             if (!_manager.AllowsTraffic(conn))
                 continue;
-            try
-            {
-                LogChatRequest("send", conn, target);
-                await TrackAsync(conn, () => conn.Api.CreateChatRequestAsync(
-                    new ChatRequestCreateRequest
-                    {
-                        PublicKey = publicKey,
-                        TargetNetworkId = target
-                    },
-                    cancellationToken)).ConfigureAwait(false);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                var (host, port) = SplitServerHostPort(conn.Entity.BaseUrl);
-                _logger.LogWarning(ex, "CreateChatRequest failed on {Host}:{Port} ({BaseUrl})",
-                    host, port, conn.Entity.BaseUrl);
-            }
+            await PublishChatRequestOnAsync(conn, target, cancellationToken, publicKey).ConfigureAwait(false);
+        }
+    }
+
+    private async Task PublishChatRequestOnAsync(
+        MessengerServerConnection connection,
+        string targetNetworkId,
+        CancellationToken cancellationToken,
+        string? publicKey = null)
+    {
+        if (!_manager.AllowsTraffic(connection))
+            return;
+
+        publicKey ??= RsaKeySerializer.SerializePublic(_auth.GetCurrentPublicKey());
+        try
+        {
+            LogChatRequest("send", connection, targetNetworkId);
+            await TrackAsync(connection, () => connection.Api.CreateChatRequestAsync(
+                new ChatRequestCreateRequest
+                {
+                    PublicKey = publicKey,
+                    TargetNetworkId = targetNetworkId
+                },
+                cancellationToken)).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            var (host, port) = SplitServerHostPort(connection.Entity.BaseUrl);
+            _logger.LogWarning(ex, "CreateChatRequest failed on {Host}:{Port} ({BaseUrl})",
+                host, port, connection.Entity.BaseUrl);
         }
     }
 
@@ -642,6 +755,15 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
         if (allowed.Count == 0)
             return allowed;
 
+        var peerKey = ChatRepository.CanonicalPeerNetworkId(peerId);
+        if (_preferredServerByPeer.TryGetValue(peerKey, out var preferredId))
+        {
+            var preferred = allowed.FirstOrDefault(c => c.Entity.Id == preferredId);
+            if (preferred != null &&
+                await PeerRegisteredOnTrustedServerAsync(preferred, peerId, cancellationToken).ConfigureAwait(false))
+                return new List<MessengerServerConnection> { preferred };
+        }
+
         var registered = new List<MessengerServerConnection>(allowed.Count);
         foreach (var conn in allowed)
         {
@@ -726,6 +848,38 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
         }
 
         return byId.Values.ToArray();
+    }
+
+    private async Task<ClientPresenceDto?> FindPeerPresenceAsync(
+        MessengerServerConnection connection,
+        string peerNetworkId,
+        CancellationToken cancellationToken)
+    {
+        if (!_manager.AllowsTraffic(connection))
+            return null;
+
+        try
+        {
+            var list = await TrackAsync(connection, () => connection.Api.GetClientsAsync(cancellationToken))
+                .ConfigureAwait(false);
+            _manager.ReplaceRegisteredClients(connection.Entity.Id, list.Select(c => c.NetworkId));
+            ClientPresenceDto? match = null;
+            foreach (var client in list)
+            {
+                if (!ChatRepository.PeerNetworkIdsEqual(client.NetworkId, peerNetworkId))
+                    continue;
+                if (match == null || PreferClient(client, match))
+                    match = client;
+            }
+
+            return match;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogDebug(ex, "GetClients failed while looking up {PeerId} on {BaseUrl}",
+                peerNetworkId, connection.Entity.BaseUrl);
+            return null;
+        }
     }
 
     private async Task<bool> PeerRegisteredOnTrustedServerAsync(
@@ -1355,8 +1509,16 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
         string? blobServerBaseUrl,
         CancellationToken cancellationToken)
     {
+        if (_sessions.TryGetSession(chat.Id, out var session) &&
+            session != null &&
+            !session.AcceptsServerTransport)
+        {
+            _logger.LogInformation(
+                "Chat {ChatId}: server inbox skipped (delivery path is mesh)", chat.Id);
+            return;
+        }
+
         if (!blocked &&
-            _sessions.TryGetSession(chat.Id, out var session) &&
             session != null &&
             session.IsReadyForServerReceive)
         {

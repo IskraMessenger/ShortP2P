@@ -173,6 +173,8 @@ public sealed class AppDatabase
             .ConfigureAwait(false);
         await TryAlterAsync(connection, "ALTER TABLE chats ADD COLUMN PeerKeySourceDetail TEXT NULL")
             .ConfigureAwait(false);
+        await TryAlterAsync(connection, "ALTER TABLE chats ADD COLUMN DeliveryPath INTEGER NOT NULL DEFAULT 0")
+            .ConfigureAwait(false);
         await TryAlterAsync(connection,
             "ALTER TABLE messages ADD COLUMN DeliveryStatus INTEGER NOT NULL DEFAULT 2").ConfigureAwait(false);
         try

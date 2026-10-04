@@ -139,6 +139,12 @@ public sealed class ChatForm : Form
         FlatStyle = FlatStyle.Flat
     };
 
+    private readonly Button _deliveryPath = new()
+    {
+        Text = "Путь: авто",
+        AutoSize = true
+    };
+
     private readonly ChatRepository _repo;
 
     private readonly Button _send = new()
@@ -204,6 +210,8 @@ public sealed class ChatForm : Form
         _emergencyUntrust.FlatAppearance.BorderSize = 0;
         _buttonTooltips.SetToolTip(_emergencyUntrust,
             "Срочно пометить текущий messenger-сервер как недоверенный и переключиться.");
+        _buttonTooltips.SetToolTip(_deliveryPath,
+            "Переключить доставку этого чата: сервер или mesh (UDP/BLE). Ручной выбор держится, пока не переключите обратно.");
 
         _peerInfoLabel.Text = PeerInfoText("Статус: офлайн");
         RefreshSafetyLabel();
@@ -213,17 +221,20 @@ public sealed class ChatForm : Form
             Dock = DockStyle.Top,
             AutoSize = true,
             Padding = new Padding(8, 6, 8, 2),
-            ColumnCount = 4,
+            ColumnCount = 5,
             RowCount = 1
         };
         top.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         top.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         top.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         top.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        top.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         top.Controls.Add(_peerInfoLabel, 0, 0);
         top.Controls.Add(_safetyNumberLabel, 1, 0);
-        top.Controls.Add(_emergencyUntrust, 2, 0);
-        top.Controls.Add(_clearChat, 3, 0);
+        top.Controls.Add(_deliveryPath, 2, 0);
+        top.Controls.Add(_emergencyUntrust, 3, 0);
+        top.Controls.Add(_clearChat, 4, 0);
+        _deliveryPath.Click += (_, _) => ShowDeliveryPathMenu();
         _emergencyUntrust.Click += async (_, _) => await OnEmergencyUntrustAsync().ConfigureAwait(true);
         _repo.PeerPublicKeyChanged += OnPeerPublicKeyChanged;
         _messengerServers.FailoverCompleted += OnMessengerServerFailover;
@@ -326,8 +337,49 @@ public sealed class ChatForm : Form
                     MessageBoxIcon.Warning);
             }
 
+        RefreshDeliveryPathButton();
         await ReloadMessagesAsync().ConfigureAwait(true);
         RefreshPeerPresenceLabel();
+    }
+
+    private void RefreshDeliveryPathButton()
+    {
+        _deliveryPath.Text = _p2PSession == null
+            ? ChatP2PSession.DeliveryPathLabel(ChatDeliveryPath.Auto)
+            : ChatP2PSession.DeliveryPathLabel(_p2PSession.DeliveryPath);
+    }
+
+    private void ShowDeliveryPathMenu()
+    {
+        if (_p2PSession == null)
+            return;
+
+        var menu = new ContextMenuStrip();
+        menu.Closed += (_, _) => menu.Dispose();
+        menu.Items.Add("Сервер", null, async (_, _) =>
+            await ApplyDeliveryPathAsync(ChatDeliveryPath.Server).ConfigureAwait(true));
+        menu.Items.Add("Mesh (UDP/BLE)", null, async (_, _) =>
+            await ApplyDeliveryPathAsync(ChatDeliveryPath.Mesh).ConfigureAwait(true));
+        menu.Show(_deliveryPath, new Point(0, _deliveryPath.Height));
+    }
+
+    private async Task ApplyDeliveryPathAsync(ChatDeliveryPath path)
+    {
+        if (_p2PSession == null)
+            return;
+
+        _userActions.LogInformation("Chat {Peer}: switch delivery path to {Path}", _chat.PeerNickname, path);
+        try
+        {
+            await _p2PSession.SwitchDeliveryPathAsync(path).ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Delivery path switch failed for chat {ChatId}", _chat.Id);
+            MessageBox.Show(this, ex.Message, "Путь доставки", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+
+        RefreshDeliveryPathButton();
     }
 
     protected override void OnFormClosed(FormClosedEventArgs e)

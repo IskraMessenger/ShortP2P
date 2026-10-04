@@ -475,6 +475,10 @@ public sealed class ChatRepository(AppDatabase appDatabase, PeerBlacklist? black
         return true;
     }
 
+    public Task UpdateChatDeliveryPathAsync(int chatId, int deliveryPath) =>
+        _db.WriteAsync(conn => conn.ExecuteAsync(
+            "UPDATE chats SET DeliveryPath = ? WHERE Id = ?", deliveryPath, chatId));
+
     public async Task UpdateChatP2pRouteAsync(int chatId, string peerHost, int peerPort, string? relayRouteBlob,
         string? peerRsaPublicJson = null, PeerKeySource? keySource = null)
     {
