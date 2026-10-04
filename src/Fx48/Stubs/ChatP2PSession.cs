@@ -54,6 +54,9 @@ public sealed class ChatP2PSession
     /// </summary>
     public bool IsReadyForServerReceive => false;
 
+    /// <summary>Fx48 has no mesh P2P path; server inbox stays on the repository.</summary>
+    public bool AcceptsServerTransport => true;
+
     public event EventHandler? MessagesChanged;
 
     public event EventHandler<int>? TransferStateChanged;

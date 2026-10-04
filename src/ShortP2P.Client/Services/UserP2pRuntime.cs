@@ -43,6 +43,7 @@ public sealed class UserP2pRuntime : IAsyncDisposable
     private readonly HashSet<string> _selfUdpAddresses = new(StringComparer.OrdinalIgnoreCase);
 
     private readonly ChatSessionCache _sessionCache;
+    private readonly ILogger<UserP2pRuntime> _logger;
     private readonly ILoggerFactory _loggerFactory;
     private readonly P2pRoutingSettingsStore _store;
     private UserEntity? _currentDataPortUser;
@@ -79,6 +80,7 @@ public sealed class UserP2pRuntime : IAsyncDisposable
         _sessionCache = sessionCache;
         _cryptoSessionCache = cryptoSessionCache;
         _loggerFactory = loggerFactory ?? NullLoggerFactory.Instance;
+        _logger = _loggerFactory.CreateLogger<UserP2pRuntime>();
         _bluetooth = bluetooth;
         MessengerServers = messengerServers;
         PeerProfiles = peerProfileStore;
@@ -157,6 +159,13 @@ public sealed class UserP2pRuntime : IAsyncDisposable
 
     /// <summary>UDP-транспорт data-порта (для отправки invite-replies/control в адрес пира).</summary>
     public UdpTransport? DataUdp { get; private set; }
+
+    /// <summary>
+    ///     True when UDP transport is enabled and both the invite listener and the data socket came up.
+    ///     False after a bind/start failure — callers should use the BLE / messenger-server workaround.
+    /// </summary>
+    public bool IsUdpTransportEstablished =>
+        Settings.EnableUdpTransport && DataUdp != null && Invite != null;
 
     public P2pRoutingSettings Settings { get; } = new();
 
@@ -300,21 +309,53 @@ public sealed class UserP2pRuntime : IAsyncDisposable
             await StopDataPortCoreAsync(cancellationToken).ConfigureAwait(false);
             _dataCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
-            DataUdp = UdpTransportFactory.Acquire(IPAddress.Any, user.DataUdpPort);
-            await DataUdp.StartAsync(cancellationToken).ConfigureAwait(false);
+            var inbound = new List<ITransport>();
+            if (Settings.EnableUdpTransport)
+            {
+                try
+                {
+                    var udp = UdpTransportFactory.Acquire(IPAddress.Any, user.DataUdpPort);
+                    DataUdp = udp;
+                    await DataUdp.StartAsync(cancellationToken).ConfigureAwait(false);
+                    inbound.Add(DataUdp);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _logger.LogWarning(ex,
+                        "Error while establishing connection by UDP on data port {Port}", user.DataUdpPort);
+                    if (DataUdp != null)
+                    {
+                        var failed = DataUdp;
+                        DataUdp = null;
+                        try
+                        {
+                            await UdpTransportFactory.ReleaseAsync(failed, CancellationToken.None)
+                                .ConfigureAwait(false);
+                        }
+                        catch
+                        {
+                            // ignore
+                        }
+                    }
+                }
+            }
 
-            var inbound = new List<ITransport> { DataUdp };
             var bluetooth = BluetoothTransport;
-            if (bluetooth != null)
+            if (bluetooth != null && Settings.EnableBluetoothTransport)
                 try
                 {
                     await bluetooth.StartAsync(cancellationToken).ConfigureAwait(false);
                     inbound.Add(bluetooth);
                 }
-                catch
+                catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     // bluetooth subsystem optional
+                    _logger.LogDebug(ex, "BLE data transport did not start");
                 }
+
+            if (inbound.Count == 0)
+                throw new InvalidOperationException(
+                    "Error while establishing connection by UDP, and BLE is not available.");
 
             _dataPortMultiplexer = new DataPortMultiplexer(ResolveDataOutboundTransport);
             _dataPortMultiplexer.BleNetworkId.GotData += OnBleNetworkIdReceived;
@@ -697,10 +738,28 @@ public sealed class UserP2pRuntime : IAsyncDisposable
         _bluetooth?.ApplySettings(Settings);
 
         // Инвайты (отдельный UDP) должны работать даже если presence/LAN bind на Android не удался.
-        await EnsureInviteListenerRunningAsync(user, cancellationToken).ConfigureAwait(false);
+        // SHO-10: a failed invite bind must not skip BLE and messenger servers.
+        try
+        {
+            await EnsureInviteListenerRunningAsync(user, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Error while establishing connection by UDP (invite listener)");
+        }
 
         // Data UDP + handshake/cipher транспиверы на user.DataUdpPort.
-        await EnsureDataPortRunningAsync(user, cancellationToken).ConfigureAwait(false);
+        // UDP bind failure keeps BLE (when enabled) and still starts messenger servers below.
+        try
+        {
+            await EnsureDataPortRunningAsync(user, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Error while establishing connection by UDP (data port)");
+        }
+
+        MessengerServers?.Start();
 
         try
         {

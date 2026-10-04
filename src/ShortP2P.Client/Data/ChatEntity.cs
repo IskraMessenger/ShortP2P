@@ -35,5 +35,8 @@ public class ChatEntity
     /// <summary>Сериализованный маршрут ретрансляции (первый хоп + цепочка), null/пусто — прямой UDP.</summary>
     public string? RelayRouteBlob { get; set; }
 
+    /// <summary><see cref="Services.ChatDeliveryPath"/> stored as int. 0 = auto.</summary>
+    public int DeliveryPath { get; set; }
+
     public long UpdatedUtcTicks { get; set; }
 }

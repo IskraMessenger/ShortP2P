@@ -38,6 +38,9 @@ public sealed class ChatP2PSession : IAsyncDisposable
     private const byte FrameSessionSetupRequest = 0x04;
 
     public const int MaxMessageChars = 32768;
+
+    /// <summary>SHO-10: how many newest unsent outgoing rows to retry after UDP falls back.</summary>
+    public const int UdpFallbackLatestUnsentCount = 20;
     private static readonly TimeSpan DecryptRecoveryCooldown = TimeSpan.FromSeconds(10);
     private readonly SemaphoreSlim _cryptoProbeLoopLock = new(1, 1);
     private readonly P2pCryptoSessionCache _cryptoSessionCache;
@@ -82,6 +85,14 @@ public sealed class ChatP2PSession : IAsyncDisposable
     private bool _startFinished;
     private bool _startInProgress;
     private bool _transceiverSubscribed;
+
+    /// <summary>SHO-10: local UDP establish/send failed; skip UDP outbound until the session is recreated.</summary>
+    private bool _udpOutboundUnavailable;
+
+    private int _udpFallbackApplied;
+
+    /// <summary>Manual server/mesh choice. Auto still allows the UDP-failure workaround.</summary>
+    private ChatDeliveryPath _deliveryPath = ChatDeliveryPath.Auto;
     private ChatHandshakeStatus _handshakeStatus = ChatHandshakeStatus.Idle;
 
     private ChatP2PSession(
@@ -182,6 +193,26 @@ public sealed class ChatP2PSession : IAsyncDisposable
 
         return false;
     }
+
+    /// <summary>
+    ///     SHO-10: BLE fallback only when the transport is enabled, the adapter is up, and the peer has a MAC.
+    /// </summary>
+    public static bool ShouldTryBleFallback(bool bleEnabled, bool bleTransportAvailable, bool peerHasBleAddress) =>
+        bleEnabled && bleTransportAvailable && peerHasBleAddress;
+
+    public static string DeliveryPathLabel(ChatDeliveryPath path) => path switch
+    {
+        ChatDeliveryPath.Server => "Путь: сервер",
+        ChatDeliveryPath.Mesh => "Путь: mesh",
+        _ => "Путь: авто"
+    };
+
+    /// <summary>From auto or mesh the next manual choice is server; from server it is mesh.</summary>
+    public static ChatDeliveryPath NextManualDeliveryPath(ChatDeliveryPath current) =>
+        current == ChatDeliveryPath.Server ? ChatDeliveryPath.Mesh : ChatDeliveryPath.Server;
+
+    public static bool AllowsAutomaticServerFallback(ChatDeliveryPath path) =>
+        path == ChatDeliveryPath.Auto;
 
     /// <summary>Больший MAC — BLE leader (инициирует ConnectGatt); меньший — BLE follower (ждёт входящее).</summary>
     private bool IsBleConnectionLeader()
@@ -470,7 +501,9 @@ public sealed class ChatP2PSession : IAsyncDisposable
         _chat.PeerKeySourceKind = row.PeerKeySourceKind;
         _chat.PeerKeySourceDetail = row.PeerKeySourceDetail;
         _chat.RelayRouteBlob = row.RelayRouteBlob;
+        _chat.DeliveryPath = row.DeliveryPath;
         _chat.UpdatedUtcTicks = row.UpdatedUtcTicks;
+        AdoptStoredDeliveryPath();
         _logger.LogInformation(
             "Chat {ChatId}: chat row applied (peer={PeerNetworkId}, host={PeerHost}, port={PeerPort})",
             _chat.Id, _chat.PeerNetworkIdShort, _chat.PeerHost, _chat.PeerPort);
@@ -528,6 +561,7 @@ public sealed class ChatP2PSession : IAsyncDisposable
                 return;
 
             RebuildRouteFromChat();
+            AdoptStoredDeliveryPath();
             LogSessionRoleContext("P2P session starting");
             _startInProgress = true;
             RefreshHandshakeStatus();
@@ -549,6 +583,7 @@ public sealed class ChatP2PSession : IAsyncDisposable
                 _logger.LogWarning(ex, "Chat {ChatId}: server ChatRequest publish failed during session start", _chat.Id);
             }
 
+            var udpUnavailable = false;
             try
             {
                 await SendChatInviteWithRetryAsync(cancellationToken).ConfigureAwait(false);
@@ -556,6 +591,29 @@ public sealed class ChatP2PSession : IAsyncDisposable
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Chat {ChatId}: invite send failed during session start", _chat.Id);
+                if (IsUdpUnavailableError(ex))
+                    _udpOutboundUnavailable = true;
+            }
+
+            udpUnavailable = IsUdpConnectionUnavailable();
+            if (_deliveryPath == ChatDeliveryPath.Server)
+            {
+                _udpFallbackApplied = 1;
+                _udpOutboundUnavailable = true;
+                udpUnavailable = true;
+                await TryServerFallbackAsync(cancellationToken).ConfigureAwait(false);
+            }
+            else if (_deliveryPath == ChatDeliveryPath.Mesh)
+            {
+                _udpFallbackApplied = 1;
+            }
+            else if (udpUnavailable)
+            {
+                _logger.LogWarning(
+                    "Chat {ChatId}: error while establishing connection by UDP; trying BLE and messenger server",
+                    _chat.Id);
+                await TryApplyUdpUnavailableWorkaroundAsync(cancellationToken, flushUnsent: false)
+                    .ConfigureAwait(false);
             }
 
             try
@@ -565,6 +623,18 @@ public sealed class ChatP2PSession : IAsyncDisposable
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Chat {ChatId}: session setup failed during session start", _chat.Id);
+                if (IsUdpUnavailableError(ex))
+                    _udpOutboundUnavailable = true;
+            }
+
+            if (_deliveryPath == ChatDeliveryPath.Auto && !udpUnavailable && IsUdpConnectionUnavailable())
+            {
+                _logger.LogWarning(
+                    "Chat {ChatId}: error while establishing connection by UDP; trying BLE and messenger server",
+                    _chat.Id);
+                await TryApplyUdpUnavailableWorkaroundAsync(cancellationToken, flushUnsent: false)
+                    .ConfigureAwait(false);
+                udpUnavailable = true;
             }
 
             _ = TryConfirmCryptoSessionAsync(cancellationToken);
@@ -573,6 +643,8 @@ public sealed class ChatP2PSession : IAsyncDisposable
             _startFinished = true;
             _startInProgress = false;
             RefreshHandshakeStatus();
+            if (udpUnavailable)
+                await EnqueueLatestUnsentMessagesAsync(cancellationToken).ConfigureAwait(false);
             LogSessionRoleContext("P2P session start completed");
         }
         finally
@@ -585,6 +657,13 @@ public sealed class ChatP2PSession : IAsyncDisposable
 
     /// <summary>Inbox с messenger-сервера принимается только после handshake.</summary>
     public bool IsReadyForServerReceive => _startFinished;
+
+    /// <summary>False while the user has forced mesh: server inbox for this chat is ignored.</summary>
+    public bool AcceptsServerTransport => _deliveryPath != ChatDeliveryPath.Mesh;
+
+    public ChatDeliveryPath DeliveryPath => _deliveryPath;
+
+    public event EventHandler? DeliveryPathChanged;
 
     private void SubscribeToTransceivers()
     {
@@ -1223,6 +1302,18 @@ public sealed class ChatP2PSession : IAsyncDisposable
                     // Keep Pending at head for a later retry / presence flush.
                     throw;
                 }
+                catch (Exception ex) when (IsUdpUnavailableError(ex) && _udpFallbackApplied == 0)
+                {
+                    _logger.LogWarning(ex,
+                        "Chat {ChatId}: error while establishing connection by UDP, applying fallback",
+                        _chat.Id);
+                    _udpOutboundUnavailable = true;
+                    await TryApplyUdpUnavailableWorkaroundAsync(cancellationToken, flushUnsent: false)
+                        .ConfigureAwait(false);
+                    await EnqueueLatestUnsentMessagesAsync(cancellationToken, startWorker: false)
+                        .ConfigureAwait(false);
+                    continue;
+                }
                 catch (Exception ex) when (IsDeferrableSendFailure(ex) && CanQueueUntilPeerSeenOnLan())
                 {
                     _logger.LogDebug(ex,
@@ -1307,20 +1398,15 @@ public sealed class ChatP2PSession : IAsyncDisposable
         await _guaranteedDelivery.ExecuteAsync(
             async ct =>
             {
-                var servers = _runtime.MessengerServers;
-                if (servers != null)
+                var acceptedId = await TryServerDeliveryAsync(wire, ct).ConfigureAwait(false);
+                if (!string.IsNullOrEmpty(acceptedId))
                 {
-                    var acceptedId = await servers.TryDeliverWireAsync(_chat, _user, wire, ct)
+                    // Register immediately so a fast peer receipt can correlate even if we crash
+                    // before the outer Sent update.
+                    await _repo.RegisterOutgoingServerMessageAsync(acceptedId, messageId, _chat.Id)
                         .ConfigureAwait(false);
-                    if (!string.IsNullOrEmpty(acceptedId))
-                    {
-                        // Register immediately so a fast peer receipt can correlate even if we crash
-                        // before the outer Sent update.
-                        await _repo.RegisterOutgoingServerMessageAsync(acceptedId, messageId, _chat.Id)
-                            .ConfigureAwait(false);
-                        serverMessageId = acceptedId;
-                        return;
-                    }
+                    serverMessageId = acceptedId;
+                    return;
                 }
 
                 await EnsureSessionAsInitiatorAsync(ct).ConfigureAwait(false);
@@ -1372,10 +1458,7 @@ public sealed class ChatP2PSession : IAsyncDisposable
         await _guaranteedDelivery.ExecuteAsync(
             async ct =>
             {
-                var servers = _runtime.MessengerServers;
-                if (servers != null &&
-                    !string.IsNullOrEmpty(
-                        await servers.TryDeliverWireAsync(_chat, _user, wire, ct).ConfigureAwait(false)))
+                if (!string.IsNullOrEmpty(await TryServerDeliveryAsync(wire, ct).ConfigureAwait(false)))
                     return;
 
                 await EnsureSessionAsInitiatorAsync(ct).ConfigureAwait(false);
@@ -1871,6 +1954,8 @@ public sealed class ChatP2PSession : IAsyncDisposable
         {
             if (!IsTransportEnabled(dest.Kind))
                 continue;
+            if (dest.Kind == TransportKind.Udp && _udpOutboundUnavailable)
+                continue;
 
             hadAttempt = true;
             try
@@ -1881,6 +1966,8 @@ public sealed class ChatP2PSession : IAsyncDisposable
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 last = ex;
+                if (dest.Kind == TransportKind.Udp && IsUdpUnavailableError(ex))
+                    _udpOutboundUnavailable = true;
             }
         }
 
@@ -1948,6 +2035,8 @@ public sealed class ChatP2PSession : IAsyncDisposable
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 last = ex;
+                if (dest.Kind == TransportKind.Udp && IsUdpUnavailableError(ex))
+                    _udpOutboundUnavailable = true;
             }
         }
 
@@ -1978,7 +2067,7 @@ public sealed class ChatP2PSession : IAsyncDisposable
     {
         return destination.Kind switch
         {
-            TransportKind.Udp when IsTransportEnabled(TransportKind.Udp) => _runtime.DataUdp,
+            TransportKind.Udp when IsUdpOutboundReady() => _runtime.DataUdp,
             TransportKind.Bluetooth when IsTransportEnabled(TransportKind.Bluetooth) => BluetoothTransport,
             _ => null
         };
@@ -2038,11 +2127,11 @@ public sealed class ChatP2PSession : IAsyncDisposable
     {
         //в _peerAddress должен записываться адрес, который приходит в пакете с networkId
         var list = new List<TransportAddress>();
-        if (_peerAddress != null && IsTransportEnabled(_peerAddress.Kind))
+        if (_peerAddress != null && IsOutboundTransportReady(_peerAddress.Kind))
             list.Add(_peerAddress);
         foreach (var ep in _peerEndpoints)
         {
-            if (!IsTransportEnabled(ep.Kind))
+            if (!IsOutboundTransportReady(ep.Kind))
                 continue;
             if (list.Any(x => x.Kind == ep.Kind && x.Data.AsSpan().SequenceEqual(ep.Data)))
                 continue;
@@ -2553,5 +2642,293 @@ public sealed class ChatP2PSession : IAsyncDisposable
             TransportKind.Bluetooth => _routingSettings?.EnableBluetoothTransport ?? true,
             _ => false
         };
+    }
+
+    private bool IsUdpOutboundReady() =>
+        IsTransportEnabled(TransportKind.Udp) && !_udpOutboundUnavailable && _runtime.DataUdp != null;
+
+    private bool IsOutboundTransportReady(TransportKind kind) =>
+        kind == TransportKind.Udp ? IsUdpOutboundReady() : IsTransportEnabled(kind);
+
+    private bool IsUdpConnectionUnavailable() =>
+        _udpOutboundUnavailable || !_runtime.IsUdpTransportEstablished;
+
+    private static bool IsUdpUnavailableError(Exception ex)
+    {
+        for (var current = ex; current != null; current = current.InnerException)
+        {
+            if (current is SocketException)
+                return true;
+            if (current.Message.Contains("UDP", StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    ///     SHO-10 workaround. UDP did not come up: try BLE when it is enabled and the peer is reachable
+    ///     over it, and independently pin the chat to an available messenger server that lists this subscriber.
+    ///     Send prefers that server (existing server-first delivery); receive stays on the server long-poll.
+    ///     When both paths are up, server delivery still wins if the peer is registered there; BLE is the P2P path.
+    /// </summary>
+    private async Task TryApplyUdpUnavailableWorkaroundAsync(CancellationToken cancellationToken, bool flushUnsent)
+    {
+        if (!AllowsAutomaticServerFallback(_deliveryPath))
+        {
+            Interlocked.Exchange(ref _udpFallbackApplied, 1);
+            return;
+        }
+
+        if (Interlocked.Exchange(ref _udpFallbackApplied, 1) == 1)
+            return;
+
+        _udpOutboundUnavailable = true;
+        await TryBleFallbackAsync(cancellationToken).ConfigureAwait(false);
+        await TryServerFallbackAsync(cancellationToken).ConfigureAwait(false);
+        if (flushUnsent)
+            await EnqueueLatestUnsentMessagesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task TryBleFallbackAsync(CancellationToken cancellationToken)
+    {
+        var peerHasMac = TryGetPeerBluetoothMac(out _);
+        if (!ShouldTryBleFallback(
+                IsTransportEnabled(TransportKind.Bluetooth),
+                BluetoothTransport != null,
+                peerHasMac))
+        {
+            _logger.LogInformation(
+                "Chat {ChatId}: BLE fallback skipped (enabled={Enabled}, transport={HasTransport}, peerMac={HasPeer})",
+                _chat.Id,
+                IsTransportEnabled(TransportKind.Bluetooth),
+                BluetoothTransport != null,
+                peerHasMac);
+            return;
+        }
+
+        PreferBleEndpoint();
+        _logger.LogInformation(
+            "Chat {ChatId}: UDP unavailable, switching invite to BLE {PeerMac}",
+            _chat.Id, FormatTransportAddress(_peerAddress!));
+        try
+        {
+            await SendChatInviteAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Chat {ChatId}: BLE invite during UDP fallback failed", _chat.Id);
+        }
+    }
+
+    private async Task<bool> TryServerFallbackAsync(CancellationToken cancellationToken)
+    {
+        var servers = _runtime.MessengerServers;
+        if (servers == null)
+        {
+            _logger.LogInformation("Chat {ChatId}: messenger-server fallback skipped (servers not configured)",
+                _chat.Id);
+            return false;
+        }
+
+        try
+        {
+            var bound = await servers.TrySwitchPeerToHostingServerAsync(_chat.PeerNetworkIdShort, cancellationToken)
+                .ConfigureAwait(false);
+            if (bound == null)
+            {
+                _logger.LogInformation(
+                    "Chat {ChatId}: no available messenger server hosts peer {PeerId}",
+                    _chat.Id, _chat.PeerNetworkIdShort);
+                return false;
+            }
+
+            _logger.LogInformation(
+                "Chat {ChatId}: switched send/receive to messenger server {BaseUrl}",
+                _chat.Id, bound.BaseUrl);
+            return true;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Chat {ChatId}: messenger-server fallback failed", _chat.Id);
+            return false;
+        }
+    }
+
+    private void PreferBleEndpoint()
+    {
+        if (!TryGetPeerBluetoothMac(out var mac))
+            return;
+        var ble = BluetoothTransportAddress.FromMac(mac);
+        _peerAddress = ble;
+        _peerEndpoints.RemoveAll(ep =>
+            ep.Kind == TransportKind.Bluetooth && ep.Data.AsSpan().SequenceEqual(ble.Data));
+        _peerEndpoints.Insert(0, ble);
+    }
+
+    private async Task EnqueueLatestUnsentMessagesAsync(CancellationToken cancellationToken, bool startWorker = true)
+    {
+        IReadOnlyList<ChatMessageEntity> page;
+        try
+        {
+            page = await _repo.ListMessagesPageDescAsync(_chat.Id, 0, 200, includePayloadBlob: false)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Chat {ChatId}: could not load unsent messages after UDP fallback", _chat.Id);
+            return;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        var latestIds = new List<int>(UdpFallbackLatestUnsentCount);
+        foreach (var row in page)
+        {
+            if (!row.Outgoing)
+                continue;
+            var status = (MessageDeliveryStatus)row.DeliveryStatus;
+            if (status is not (MessageDeliveryStatus.Pending or MessageDeliveryStatus.Failed))
+                continue;
+            latestIds.Add(row.Id);
+            if (latestIds.Count >= UdpFallbackLatestUnsentCount)
+                break;
+        }
+
+        if (latestIds.Count == 0)
+            return;
+
+        latestIds.Reverse();
+        foreach (var id in latestIds)
+        {
+            var row = page.First(r => r.Id == id);
+            if ((MessageDeliveryStatus)row.DeliveryStatus == MessageDeliveryStatus.Failed)
+            {
+                try
+                {
+                    await _repo.UpdateMessageDeliveryStatusAsync(id, MessageDeliveryStatus.Pending)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _logger.LogDebug(ex, "Chat {ChatId}: could not requeue message {MessageId}", _chat.Id, id);
+                }
+            }
+
+            lock (_pendingSync)
+            {
+                if (!_pendingOutgoing.Contains(id))
+                    _pendingOutgoing.Add(id);
+            }
+        }
+
+        RaiseMessagesChanged();
+        HookPresenceForPendingFlush();
+        if (startWorker)
+            StartFlushPendingInBackground();
+    }
+
+    /// <summary>
+    ///     Manual server ↔ mesh switch for this chat. The choice is stored on the chat row and blocks the
+    ///     automatic UDP fallback until the user switches again. A failed mesh connect is not rolled back.
+    /// </summary>
+    public async Task SwitchDeliveryPathAsync(ChatDeliveryPath path, CancellationToken cancellationToken = default)
+    {
+        if (path is not (ChatDeliveryPath.Server or ChatDeliveryPath.Mesh))
+            throw new ArgumentOutOfRangeException(nameof(path));
+
+        if (path == ChatDeliveryPath.Server)
+            await ForceServerPathAsync(cancellationToken).ConfigureAwait(false);
+        else
+            await ForceMeshPathAsync(cancellationToken).ConfigureAwait(false);
+
+        RaiseDeliveryPathChanged();
+    }
+
+    private async Task ForceServerPathAsync(CancellationToken cancellationToken)
+    {
+        _deliveryPath = ChatDeliveryPath.Server;
+        _udpFallbackApplied = 1;
+        _udpOutboundUnavailable = true;
+        await PersistDeliveryPathAsync().ConfigureAwait(false);
+        _logger.LogInformation("Chat {ChatId}: manual switch to messenger server", _chat.Id);
+
+        var bound = await TryServerFallbackAsync(cancellationToken).ConfigureAwait(false);
+        await EnqueueLatestUnsentMessagesAsync(cancellationToken).ConfigureAwait(false);
+        if (!bound)
+            throw new InvalidOperationException("Абонент не найден на доступных messenger-серверах.");
+    }
+
+    private async Task ForceMeshPathAsync(CancellationToken cancellationToken)
+    {
+        _deliveryPath = ChatDeliveryPath.Mesh;
+        _udpFallbackApplied = 1;
+        _udpOutboundUnavailable = false;
+        _runtime.MessengerServers?.ClearPreferredServer(_chat.PeerNetworkIdShort);
+        await PersistDeliveryPathAsync().ConfigureAwait(false);
+        RebuildRouteFromChat();
+        _logger.LogInformation("Chat {ChatId}: manual switch to mesh (UDP/BLE)", _chat.Id);
+
+        Exception? connectError = null;
+        try
+        {
+            await SendChatInviteWithRetryAsync(cancellationToken).ConfigureAwait(false);
+            await EnsureSessionAsInitiatorAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Chat {ChatId}: mesh connect failed; delivery path stays mesh", _chat.Id);
+            connectError = ex;
+        }
+
+        await EnqueueLatestUnsentMessagesAsync(cancellationToken).ConfigureAwait(false);
+        if (connectError != null)
+            throw connectError;
+    }
+
+    private async Task PersistDeliveryPathAsync()
+    {
+        _chat.DeliveryPath = (int)_deliveryPath;
+        await _repo.UpdateChatDeliveryPathAsync(_chat.Id, _chat.DeliveryPath).ConfigureAwait(false);
+    }
+
+    private void AdoptStoredDeliveryPath()
+    {
+        _deliveryPath = _chat.DeliveryPath switch
+        {
+            (int)ChatDeliveryPath.Server => ChatDeliveryPath.Server,
+            (int)ChatDeliveryPath.Mesh => ChatDeliveryPath.Mesh,
+            _ => ChatDeliveryPath.Auto
+        };
+    }
+
+    private void RaiseDeliveryPathChanged()
+    {
+        if (_uiSynchronizationContext != null)
+            _uiSynchronizationContext.Post(_ => DeliveryPathChanged?.Invoke(this, EventArgs.Empty), null);
+        else
+            DeliveryPathChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <returns>Server message id, or null to continue on the mesh path. Server mode throws instead of falling through.</returns>
+    private async Task<string?> TryServerDeliveryAsync(byte[] wire, CancellationToken cancellationToken)
+    {
+        if (_deliveryPath == ChatDeliveryPath.Mesh)
+            return null;
+
+        var servers = _runtime.MessengerServers;
+        if (servers == null)
+        {
+            if (_deliveryPath == ChatDeliveryPath.Server)
+                throw new InvalidOperationException("Messenger-серверы не подключены.");
+            return null;
+        }
+
+        var acceptedId = await servers.TryDeliverWireAsync(_chat, _user, wire, cancellationToken)
+            .ConfigureAwait(false);
+        if (!string.IsNullOrEmpty(acceptedId))
+            return acceptedId;
+        if (_deliveryPath == ChatDeliveryPath.Server)
+            throw new InvalidOperationException("Абонент не найден на доступных messenger-серверах.");
+        return null;
     }
 }

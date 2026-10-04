@@ -135,8 +135,45 @@ public partial class ChatDetailPage : ContentPage
                 await DisplayAlert("P2P", $"Could not start UDP: {ex.Message}", "OK").ConfigureAwait(true);
             }
 
+        RefreshDeliveryPathButton();
         await ReloadMessagesAsync().ConfigureAwait(true);
         RefreshPeerPresenceLabel();
+    }
+
+    private void RefreshDeliveryPathButton()
+    {
+        PathModeItem.Text = _p2pSession == null
+            ? ChatP2PSession.DeliveryPathLabel(ChatDeliveryPath.Auto)
+            : ChatP2PSession.DeliveryPathLabel(_p2pSession.DeliveryPath);
+    }
+
+    private async void OnPathModeClicked(object? sender, EventArgs e)
+    {
+        if (_p2pSession == null)
+            return;
+
+        var choice = await DisplayActionSheetAsync("Путь доставки", "Отмена", null, "Сервер", "Mesh (UDP/BLE)")
+            .ConfigureAwait(true);
+        var path = choice switch
+        {
+            "Сервер" => ChatDeliveryPath.Server,
+            "Mesh (UDP/BLE)" => ChatDeliveryPath.Mesh,
+            _ => (ChatDeliveryPath?)null
+        };
+        if (path == null)
+            return;
+
+        try
+        {
+            await _p2pSession.SwitchDeliveryPathAsync(path.Value).ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Delivery path switch failed");
+            await DisplayAlertAsync("Путь доставки", ex.Message, "OK").ConfigureAwait(true);
+        }
+
+        RefreshDeliveryPathButton();
     }
 
     protected override void OnDisappearing()
