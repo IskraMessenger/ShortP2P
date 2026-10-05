@@ -303,6 +303,7 @@ public sealed class ChatForm : Form
         _attachCamera.Click += async (_, _) => await OnAttachCameraAsync().ConfigureAwait(true);
         _attachDocument.Click += async (_, _) => await OnAttachDocumentAsync().ConfigureAwait(true);
         _send.Click += async (_, _) => await OnSendAsync().ConfigureAwait(true);
+        _input.KeyDown += OnInputKeyDown;
         _techHandshake.Click += async (_, _) => await OnTechHandshakeAsync().ConfigureAwait(true);
         _techInvite.Click += async (_, _) => await OnTechInviteAsync().ConfigureAwait(true);
         _techPing.Click += async (_, _) => await OnTechPingAsync().ConfigureAwait(true);
@@ -805,6 +806,26 @@ public sealed class ChatForm : Form
         {
             await ReloadMessagesAsync().ConfigureAwait(true);
         }
+    }
+
+    private async void OnInputKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.KeyCode != Keys.Enter)
+            return;
+
+        // Ctrl+Enter inserts a newline; bare Enter sends the message.
+        if (e.Control)
+        {
+            e.SuppressKeyPress = true;
+            _input.SelectedText = "\n";
+            return;
+        }
+
+        if (e.Alt || e.Shift)
+            return;
+
+        e.SuppressKeyPress = true;
+        await OnSendAsync().ConfigureAwait(true);
     }
 
     private async Task OnSendAsync()

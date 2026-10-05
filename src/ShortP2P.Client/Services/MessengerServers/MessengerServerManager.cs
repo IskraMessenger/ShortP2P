@@ -204,6 +204,25 @@ public sealed class MessengerServerManager : IAsyncDisposable
     public void ClearRegisteredClients(int serverId) =>
         _registeredClients.TryRemove(serverId, out _);
 
+    /// <summary>Known registered clients on a server (from the last GetClients snapshot). Unknown → treat as high load.</summary>
+    public int GetRegisteredClientCount(int serverId)
+    {
+        if (!_registeredClients.TryGetValue(serverId, out var set))
+            return int.MaxValue;
+        return set.Count;
+    }
+
+    /// <summary>Trusted connections ordered for outbound delivery (trust, load, then rank stats).</summary>
+    public IReadOnlyList<MessengerServerConnection> OrderConnectionsForDelivery(
+        IEnumerable<MessengerServerConnection> connections) =>
+        connections
+            .Where(c => AllowsTraffic(c))
+            .OrderBy(c => c, Comparer<MessengerServerConnection>.Create((a, b) =>
+                MessengerServerDeliveryPreference.CompareConnections(
+                    a, b, GetRankStatsRef, GetRegisteredClientCount)))
+            .ThenBy(c => c.Entity.Id)
+            .ToList();
+
     public void RecordRequestSuccess(int serverId)
     {
         var stats = _rankStats.GetOrAdd(serverId, _ => new MessengerServerRankStats());

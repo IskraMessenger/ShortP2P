@@ -57,9 +57,41 @@ public sealed class ChatP2PSession
     /// <summary>Fx48 has no mesh P2P path; server inbox stays on the repository.</summary>
     public bool AcceptsServerTransport => true;
 
+    /// <summary>Fx48 is server-only; stored mesh preference is ignored at send time.</summary>
+    public ChatDeliveryPath DeliveryPath =>
+        Enum.IsDefined(typeof(ChatDeliveryPath), _chat.DeliveryPath)
+            ? (ChatDeliveryPath)_chat.DeliveryPath
+            : ChatDeliveryPath.Server;
+
     public event EventHandler? MessagesChanged;
 
     public event EventHandler<int>? TransferStateChanged;
+
+    public event EventHandler? DeliveryPathChanged;
+
+    public static string DeliveryPathLabel(ChatDeliveryPath path) => path switch
+    {
+        ChatDeliveryPath.Server => "Путь: сервер",
+        ChatDeliveryPath.Mesh => "Путь: mesh",
+        _ => "Путь: авто"
+    };
+
+    /// <summary>
+    /// Fx48 cannot open UDP/BLE mesh. Server path is a no-op success; mesh throws.
+    /// </summary>
+    public async Task SwitchDeliveryPathAsync(ChatDeliveryPath path, CancellationToken cancellationToken = default)
+    {
+        if (path is not (ChatDeliveryPath.Server or ChatDeliveryPath.Mesh))
+            throw new ArgumentOutOfRangeException(nameof(path));
+
+        if (path == ChatDeliveryPath.Mesh)
+            throw new InvalidOperationException("Mesh (UDP/BLE) недоступен в этой сборке Windows.");
+
+        _chat.DeliveryPath = (int)ChatDeliveryPath.Server;
+        await _repo.UpdateChatDeliveryPathAsync(_chat.Id, _chat.DeliveryPath).ConfigureAwait(false);
+        DeliveryPathChanged?.Invoke(this, EventArgs.Empty);
+        await Task.CompletedTask.ConfigureAwait(false);
+    }
 
     /// <summary>
     /// Downloads an incoming transfer blob from messenger servers (no TCP P2P on Fx48).

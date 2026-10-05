@@ -52,6 +52,7 @@
     <Compile Include="..\ShortP2P.Client\Routing\LocalEndpointHelper.cs" />
     <Compile Include="..\ShortP2P.Client\Routing\ChatInviteCodec.cs" />
     <Compile Include="..\ShortP2P.Client\Services\ChatRepository.cs" />
+    <Compile Include="..\ShortP2P.Client\Services\ChatDeliveryPath.cs" />
     <Compile Include="..\ShortP2P.Client\Services\PeerBlacklist.cs" />
     <Compile Include="..\ShortP2P.Client\Services\ChatSessionCache.cs" />
     <Compile Include="..\ShortP2P.Client\Services\PeerKeySource.cs" />

@@ -79,9 +79,126 @@ public partial class ChatDetailPage : ContentPage
         _messengerServers = messengerServers;
         _logger = logger;
         MessagesCollection.ItemsSource = _messageItems;
+        WireMessageEntryKeyboard();
     }
 
     public int ChatId { get; set; }
+
+    private void WireMessageEntryKeyboard()
+    {
+        MessageEntry.HandlerChanged += OnMessageEntryHandlerChanged;
+        if (MessageEntry.Handler?.PlatformView is not null)
+            AttachMessageEntryPlatformKeyboard(MessageEntry.Handler.PlatformView);
+    }
+
+    private void OnMessageEntryHandlerChanged(object? sender, EventArgs e)
+    {
+        if (MessageEntry.Handler?.PlatformView is not null)
+            AttachMessageEntryPlatformKeyboard(MessageEntry.Handler.PlatformView);
+    }
+
+    private void AttachMessageEntryPlatformKeyboard(object platformView)
+    {
+#if WINDOWS
+        // MAUI Editor maps to WinUI TextBox with AcceptsReturn=true. That inserts a newline in
+        // TextBox.OnKeyDown before bubbling KeyDown, so Enter never reaches our send handler.
+        // PreviewKeyDown runs first; AcceptsReturn=false keeps multiline via Ctrl+Enter only.
+        if (platformView is Microsoft.UI.Xaml.Controls.TextBox textBox)
+        {
+            textBox.AcceptsReturn = false;
+            textBox.TextWrapping = Microsoft.UI.Xaml.TextWrapping.Wrap;
+            textBox.PreviewKeyDown -= OnWindowsMessageEntryPreviewKeyDown;
+            textBox.PreviewKeyDown += OnWindowsMessageEntryPreviewKeyDown;
+        }
+#elif ANDROID
+        if (platformView is Android.Widget.EditText editText)
+        {
+            editText.KeyPress -= OnAndroidMessageEntryKeyPress;
+            editText.KeyPress += OnAndroidMessageEntryKeyPress;
+        }
+#endif
+    }
+
+#if WINDOWS
+    private void OnWindowsMessageEntryPreviewKeyDown(object sender, Microsoft.UI.Xaml.Input.KeyRoutedEventArgs e)
+    {
+        if (e.Key != Windows.System.VirtualKey.Enter)
+            return;
+
+        var ctrl = Microsoft.UI.Input.InputKeyboardSource
+                       .GetKeyStateForCurrentThread(Windows.System.VirtualKey.Control)
+                       .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
+        var shift = Microsoft.UI.Input.InputKeyboardSource
+                        .GetKeyStateForCurrentThread(Windows.System.VirtualKey.Shift)
+                        .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
+        var alt = Microsoft.UI.Input.InputKeyboardSource
+                      .GetKeyStateForCurrentThread(Windows.System.VirtualKey.Menu)
+                      .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
+
+        if (ctrl)
+        {
+            e.Handled = true;
+            InsertMessageEntryNewline();
+            return;
+        }
+
+        if (shift || alt)
+            return;
+
+        e.Handled = true;
+        _ = SendMessageAsync();
+    }
+#endif
+
+#if ANDROID
+    private void OnAndroidMessageEntryKeyPress(object? sender, Android.Views.View.KeyEventArgs e)
+    {
+        if (e.Event?.Action != Android.Views.KeyEventActions.Down ||
+            e.KeyCode != Android.Views.Keycode.Enter)
+            return;
+
+        var meta = e.Event.MetaState;
+        var ctrl = meta.HasFlag(Android.Views.MetaKeyStates.CtrlOn) ||
+                   meta.HasFlag(Android.Views.MetaKeyStates.CtrlLeftOn) ||
+                   meta.HasFlag(Android.Views.MetaKeyStates.CtrlRightOn);
+        var shift = meta.HasFlag(Android.Views.MetaKeyStates.ShiftOn) ||
+                    meta.HasFlag(Android.Views.MetaKeyStates.ShiftLeftOn) ||
+                    meta.HasFlag(Android.Views.MetaKeyStates.ShiftRightOn);
+        var alt = meta.HasFlag(Android.Views.MetaKeyStates.AltOn) ||
+                  meta.HasFlag(Android.Views.MetaKeyStates.AltLeftOn) ||
+                  meta.HasFlag(Android.Views.MetaKeyStates.AltRightOn);
+
+        if (ctrl)
+        {
+            e.Handled = true;
+            InsertMessageEntryNewline();
+            return;
+        }
+
+        if (shift || alt)
+            return;
+
+        e.Handled = true;
+        _ = SendMessageAsync();
+    }
+#endif
+
+    private void InsertMessageEntryNewline()
+    {
+        var text = MessageEntry.Text ?? "";
+        var cursor = MessageEntry.CursorPosition;
+        if (cursor < 0 || cursor > text.Length)
+            cursor = text.Length;
+        var selectionLength = MessageEntry.SelectionLength;
+        if (selectionLength < 0)
+            selectionLength = 0;
+        if (cursor + selectionLength > text.Length)
+            selectionLength = text.Length - cursor;
+
+        MessageEntry.Text = text.Remove(cursor, selectionLength).Insert(cursor, "\n");
+        MessageEntry.CursorPosition = cursor + 1;
+        MessageEntry.SelectionLength = 0;
+    }
 
     protected override async void OnAppearing()
     {
@@ -448,6 +565,11 @@ public partial class ChatDetailPage : ContentPage
     }
 
     private async void OnSendClicked(object? sender, EventArgs e)
+    {
+        await SendMessageAsync().ConfigureAwait(true);
+    }
+
+    private async Task SendMessageAsync()
     {
         var text = MessageEntry.Text?.Trim() ?? "";
         if (text.Length == 0 || _p2pSession == null)

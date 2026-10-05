@@ -320,13 +320,7 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
             return null;
 
         var ready = await _manager.EnsureAllActiveReadyAsync(cancellationToken).ConfigureAwait(false);
-        var ordered = new List<MessengerServerConnection>(_manager.FilterAvailable(ready));
-        foreach (var conn in ready)
-        {
-            if (_manager.AllowsTraffic(conn) && !ordered.Contains(conn))
-                ordered.Add(conn);
-        }
-
+        var ordered = _manager.OrderConnectionsForDelivery(ready);
         if (ordered.Count == 0)
         {
             _logger.LogInformation(
@@ -334,21 +328,25 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
             return null;
         }
 
-        var selection = new List<HostingServerCandidate>(ordered.Count);
-        var byId = new Dictionary<int, MessengerServerConnection>();
+        MessengerServerConnection? chosen = null;
+        MessengerServerConnection? presentOffline = null;
         foreach (var conn in ordered)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var presence = await FindPeerPresenceAsync(conn, peerId, cancellationToken).ConfigureAwait(false);
-            selection.Add(new HostingServerCandidate(
-                conn.Entity.Id,
-                presence != null,
-                presence?.IsOnline == true));
-            byId[conn.Entity.Id] = conn;
+            if (presence == null)
+                continue;
+            if (presence.IsOnline)
+            {
+                chosen = conn;
+                break;
+            }
+
+            presentOffline ??= conn;
         }
 
-        var chosenId = SelectHostingServerId(selection);
-        if (chosenId == null || !byId.TryGetValue(chosenId.Value, out var chosen))
+        chosen ??= presentOffline;
+        if (chosen == null)
         {
             _logger.LogInformation(
                 "UDP fallback: peer {PeerId} is not registered on any available messenger server", peerId);
@@ -526,46 +524,31 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
             EncryptedDataBase64 = encrypted
         };
 
-        var degree = Clamp(targets.Count, 1, MaxSendWorkers);
-        var successCount = 0;
-
-#if NETFRAMEWORK
-        await ParallelFx.ForEachAsync(
-#else
-        await Parallel.ForEachAsync(
-#endif
-
-            targets,
-            new ParallelOptions
+        foreach (var conn in targets)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!_manager.AllowsTraffic(conn))
+                continue;
+            try
             {
-                MaxDegreeOfParallelism = degree,
-                CancellationToken = cancellationToken
-            },
-            async (conn, ct) =>
+                using var sendCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                sendCts.CancelAfter(SendMessageHttpTimeout);
+                await TrackAsync(conn, () => conn.Api.SendMessageAsync(dto, sendCts.Token))
+                    .ConfigureAwait(false);
+                return messageId;
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
-                if (!_manager.AllowsTraffic(conn))
-                    return;
-                try
-                {
-                    // Command Api (not LongPollApi) + short cancel so a hung TCP cannot hold flush forever.
-                    using var sendCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                    sendCts.CancelAfter(SendMessageHttpTimeout);
-                    await TrackAsync(conn, () => conn.Api.SendMessageAsync(dto, sendCts.Token))
-                        .ConfigureAwait(false);
-                    Interlocked.Increment(ref successCount);
-                }
-                catch (OperationCanceledException) when (!ct.IsCancellationRequested)
-                {
-                    _logger.LogWarning("SendMessage timed out on {BaseUrl}", conn.Entity.BaseUrl);
-                    _manager.RecordRequestFailure(conn.Entity.Id);
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    _logger.LogWarning(ex, "SendMessage failed on {BaseUrl}", conn.Entity.BaseUrl);
-                }
-            }).ConfigureAwait(false);
+                _logger.LogWarning("SendMessage timed out on {BaseUrl}", conn.Entity.BaseUrl);
+                _manager.RecordRequestFailure(conn.Entity.Id);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogWarning(ex, "SendMessage failed on {BaseUrl}", conn.Entity.BaseUrl);
+            }
+        }
 
-        return successCount > 0 ? messageId : null;
+        return null;
     }
 
     /// <summary>
@@ -616,45 +599,31 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
         if (targets.Count == 0)
             return false;
 
-        var degree = Clamp(targets.Count, 1, MaxSendWorkers);
-        var successCount = 0;
-
-#if NETFRAMEWORK
-        await ParallelFx.ForEachAsync(
-#else
-        await Parallel.ForEachAsync(
-#endif
-
-            targets,
-            new ParallelOptions
+        foreach (var conn in targets)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!_manager.AllowsTraffic(conn))
+                continue;
+            try
             {
-                MaxDegreeOfParallelism = degree,
-                CancellationToken = cancellationToken
-            },
-            async (conn, ct) =>
+                using var putCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                putCts.CancelAfter(TimeSpan.FromMinutes(2));
+                await TrackAsync(conn, () => conn.Api.PutBlobAsync(blobId, peerId, ciphertext, putCts.Token))
+                    .ConfigureAwait(false);
+                return true;
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
-                if (!_manager.AllowsTraffic(conn))
-                    return;
-                try
-                {
-                    using var putCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                    putCts.CancelAfter(TimeSpan.FromMinutes(2));
-                    await TrackAsync(conn, () => conn.Api.PutBlobAsync(blobId, peerId, ciphertext, putCts.Token))
-                        .ConfigureAwait(false);
-                    Interlocked.Increment(ref successCount);
-                }
-                catch (OperationCanceledException) when (!ct.IsCancellationRequested)
-                {
-                    _logger.LogWarning("PutBlob timed out on {BaseUrl}", conn.Entity.BaseUrl);
-                    _manager.RecordRequestFailure(conn.Entity.Id);
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    _logger.LogDebug(ex, "PutBlob failed on {BaseUrl}", conn.Entity.BaseUrl);
-                }
-            }).ConfigureAwait(false);
+                _logger.LogWarning("PutBlob timed out on {BaseUrl}", conn.Entity.BaseUrl);
+                _manager.RecordRequestFailure(conn.Entity.Id);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogDebug(ex, "PutBlob failed on {BaseUrl}", conn.Entity.BaseUrl);
+            }
+        }
 
-        return successCount > 0;
+        return false;
     }
 
     /// <summary>
@@ -745,34 +714,53 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
         CancellationToken cancellationToken)
     {
         var ready = await _manager.EnsureAllActiveReadyAsync(cancellationToken).ConfigureAwait(false);
-        var allowed = new List<MessengerServerConnection>(ready.Count);
-        foreach (var conn in ready)
-        {
-            if (_manager.AllowsTraffic(conn))
-                allowed.Add(conn);
-        }
-
-        if (allowed.Count == 0)
-            return allowed;
+        var ordered = _manager.OrderConnectionsForDelivery(ready);
+        if (ordered.Count == 0)
+            return new List<MessengerServerConnection>();
 
         var peerKey = ChatRepository.CanonicalPeerNetworkId(peerId);
         if (_preferredServerByPeer.TryGetValue(peerKey, out var preferredId))
         {
-            var preferred = allowed.FirstOrDefault(c => c.Entity.Id == preferredId);
-            if (preferred != null &&
-                await PeerRegisteredOnTrustedServerAsync(preferred, peerId, cancellationToken).ConfigureAwait(false))
-                return new List<MessengerServerConnection> { preferred };
+            var preferred = ordered.FirstOrDefault(c => c.Entity.Id == preferredId);
+            if (preferred != null)
+            {
+                ordered = PromoteConnectionToFront(ordered, preferred);
+                if (_manager.IsClientRegisteredOnServer(preferred.Entity.Id, peerId) ||
+                    await PeerRegisteredOnTrustedServerAsync(preferred, peerId, cancellationToken)
+                        .ConfigureAwait(false))
+                    return new List<MessengerServerConnection> { preferred };
+            }
         }
 
-        var registered = new List<MessengerServerConnection>(allowed.Count);
-        foreach (var conn in allowed)
+        var cachedRegistered = ordered
+            .Where(c => _manager.IsClientRegisteredOnServer(c.Entity.Id, peerId))
+            .ToList();
+        if (cachedRegistered.Count > 0)
+            return cachedRegistered;
+
+        foreach (var conn in ordered)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (await PeerRegisteredOnTrustedServerAsync(conn, peerId, cancellationToken).ConfigureAwait(false))
-                registered.Add(conn);
+                return new List<MessengerServerConnection> { conn };
         }
 
         // GetClients can fail or use a different id spelling; SendMessage still stores for the target id.
-        return registered.Count > 0 ? registered : allowed;
+        return ordered.ToList();
+    }
+
+    private static List<MessengerServerConnection> PromoteConnectionToFront(
+        IReadOnlyList<MessengerServerConnection> ordered,
+        MessengerServerConnection preferred)
+    {
+        var list = new List<MessengerServerConnection>(ordered.Count) { preferred };
+        foreach (var conn in ordered)
+        {
+            if (!ReferenceEquals(conn, preferred) && conn.Entity.Id != preferred.Entity.Id)
+                list.Add(conn);
+        }
+
+        return list;
     }
 
     private List<MessengerServerConnection> OrderConnectionsForBlobDownload(
@@ -793,15 +781,9 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
                 ordered.Add(hinted);
         }
 
-        foreach (var conn in _manager.FilterAvailable(ready))
+        foreach (var conn in _manager.OrderConnectionsForDelivery(ready))
         {
             if (!ordered.Contains(conn))
-                ordered.Add(conn);
-        }
-
-        foreach (var conn in ready)
-        {
-            if (_manager.AllowsTraffic(conn) && !ordered.Contains(conn))
                 ordered.Add(conn);
         }
 

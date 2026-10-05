@@ -575,8 +575,12 @@ public sealed class ChatP2PSession : IAsyncDisposable
             {
                 var servers = _runtime.MessengerServers;
                 if (servers != null)
+                {
                     await servers.PublishChatRequestAsync(_chat.PeerNetworkIdShort, cancellationToken)
                         .ConfigureAwait(false);
+                    if (_deliveryPath != ChatDeliveryPath.Mesh)
+                        await TryServerFallbackAsync(cancellationToken).ConfigureAwait(false);
+                }
             }
             catch (Exception ex)
             {
@@ -586,7 +590,8 @@ public sealed class ChatP2PSession : IAsyncDisposable
             var udpUnavailable = false;
             try
             {
-                await SendChatInviteWithRetryAsync(cancellationToken).ConfigureAwait(false);
+                if (_deliveryPath != ChatDeliveryPath.Server)
+                    await SendChatInviteWithRetryAsync(cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -2684,8 +2689,8 @@ public sealed class ChatP2PSession : IAsyncDisposable
             return;
 
         _udpOutboundUnavailable = true;
-        await TryBleFallbackAsync(cancellationToken).ConfigureAwait(false);
         await TryServerFallbackAsync(cancellationToken).ConfigureAwait(false);
+        await TryBleFallbackAsync(cancellationToken).ConfigureAwait(false);
         if (flushUnsent)
             await EnqueueLatestUnsentMessagesAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -2829,7 +2834,9 @@ public sealed class ChatP2PSession : IAsyncDisposable
 
     /// <summary>
     ///     Manual server ↔ mesh switch for this chat. The choice is stored on the chat row and blocks the
-    ///     automatic UDP fallback until the user switches again. A failed mesh connect is not rolled back.
+    ///     automatic UDP fallback until the user switches again. Crypto state is cleared and an invite is
+    ///     resent so the peer re-establishes the session on the new path. A failed mesh connect is not
+    ///     rolled back.
     /// </summary>
     public async Task SwitchDeliveryPathAsync(ChatDeliveryPath path, CancellationToken cancellationToken = default)
     {
@@ -2850,8 +2857,11 @@ public sealed class ChatP2PSession : IAsyncDisposable
         _udpFallbackApplied = 1;
         _udpOutboundUnavailable = true;
         await PersistDeliveryPathAsync().ConfigureAwait(false);
-        _logger.LogInformation("Chat {ChatId}: manual switch to messenger server", _chat.Id);
+        _logger.LogInformation("Chat {ChatId}: manual switch to messenger server; reset session and re-invite",
+            _chat.Id);
 
+        await ResetCryptoStateAsync(cancellationToken).ConfigureAwait(false);
+        // TryServerFallbackAsync pins a hosting server and republishes ChatRequest (server invite).
         var bound = await TryServerFallbackAsync(cancellationToken).ConfigureAwait(false);
         await EnqueueLatestUnsentMessagesAsync(cancellationToken).ConfigureAwait(false);
         if (!bound)
@@ -2866,13 +2876,17 @@ public sealed class ChatP2PSession : IAsyncDisposable
         _runtime.MessengerServers?.ClearPreferredServer(_chat.PeerNetworkIdShort);
         await PersistDeliveryPathAsync().ConfigureAwait(false);
         RebuildRouteFromChat();
-        _logger.LogInformation("Chat {ChatId}: manual switch to mesh (UDP/BLE)", _chat.Id);
+        _logger.LogInformation("Chat {ChatId}: manual switch to mesh (UDP/BLE); reset session and re-invite",
+            _chat.Id);
+
+        await ResetCryptoStateAsync(cancellationToken).ConfigureAwait(false);
 
         Exception? connectError = null;
         try
         {
             await SendChatInviteWithRetryAsync(cancellationToken).ConfigureAwait(false);
             await EnsureSessionAsInitiatorAsync(cancellationToken).ConfigureAwait(false);
+            _ = TryConfirmCryptoSessionAsync(cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

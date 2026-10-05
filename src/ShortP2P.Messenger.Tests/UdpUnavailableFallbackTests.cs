@@ -39,6 +39,40 @@ public class UdpUnavailableFallbackTests
     }
 
     [Fact]
+    public void DeliveryPreference_OrdersByTrustThenLoadThenRank()
+    {
+        var lowLoadStats = new MessengerServerRankStats { LastKeepAliveRttMs = 50 };
+        var highLoadStats = new MessengerServerRankStats { LastKeepAliveRttMs = 10 };
+
+        Assert.True(
+            MessengerServerDeliveryPreference.Compare(
+                trustRatingA: 0.9f,
+                registeredClientCountA: 5,
+                statsA: lowLoadStats,
+                trustRatingB: 0.5f,
+                registeredClientCountB: 1,
+                statsB: highLoadStats) < 0);
+
+        Assert.True(
+            MessengerServerDeliveryPreference.Compare(
+                trustRatingA: 0.8f,
+                registeredClientCountA: 2,
+                statsA: highLoadStats,
+                trustRatingB: 0.8f,
+                registeredClientCountB: 20,
+                statsB: lowLoadStats) < 0);
+
+        Assert.True(
+            MessengerServerDeliveryPreference.Compare(
+                trustRatingA: 0.8f,
+                registeredClientCountA: 10,
+                statsA: highLoadStats,
+                trustRatingB: 0.8f,
+                registeredClientCountB: 10,
+                statsB: lowLoadStats) < 0);
+    }
+
+    [Fact]
     public void ManualPath_OverridesAutomaticServerFallbackUntilSwitched()
     {
         Assert.True(ChatP2PSession.AllowsAutomaticServerFallback(ChatDeliveryPath.Auto));
