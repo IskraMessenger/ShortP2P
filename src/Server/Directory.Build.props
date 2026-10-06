@@ -1,6 +1,7 @@
 <Project>
   <!-- Server stack: .NET 10 only (no classic .NET Framework). Do not set TargetFramework here — it breaks SDK evaluation (empty TFM). -->
   <PropertyGroup>
+    <Version>0.2.0</Version>
     <NetCoreTargetFramework>net10.0</NetCoreTargetFramework>
     <MicrosoftExtensionsVersion>10.0.0</MicrosoftExtensionsVersion>
     <MicrosoftExtensionsDiAbstractionsVersion>10.0.0</MicrosoftExtensionsDiAbstractionsVersion>

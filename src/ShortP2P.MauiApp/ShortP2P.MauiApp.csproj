@@ -14,8 +14,8 @@
 
         <ApplicationTitle>ShortP2P</ApplicationTitle>
         <ApplicationId>com.shortp2p.mauiapp</ApplicationId>
-        <ApplicationDisplayVersion>0.1</ApplicationDisplayVersion>
-        <ApplicationVersion>1</ApplicationVersion>
+        <ApplicationDisplayVersion>0.2</ApplicationDisplayVersion>
+        <ApplicationVersion>8</ApplicationVersion>
 
         <WindowsPackageType>None</WindowsPackageType>
 
