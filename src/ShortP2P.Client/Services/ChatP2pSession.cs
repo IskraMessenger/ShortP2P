@@ -154,13 +154,9 @@ public sealed class ChatP2PSession : IAsyncDisposable
             localNetworkScanner, chatMediaOptions, cryptoSessionCache, logger);
     }
 
-    /// <summary>Меньший NetworkId — единственный, кто высылает RSA-handshake; больший — только 0x04-запрос.</summary>
-    private bool IsCryptoSessionLeader()
-    {
-        var ours = CompressedNetworkId.FromShortString(_user.NetworkIdShort.Trim());
-        var peer = CompressedNetworkId.FromShortString(_chat.PeerNetworkIdShort.Trim());
-        return ours.CompareTo(peer) < 0;
-    }
+    /// <summary>Меньший NetworkId — единственный, кто высылает RSA-handshake / test_send; больший — только 0x04 и test_response.</summary>
+    private bool IsCryptoSessionLeader() =>
+        CryptoSessionLeadership.IsLeader(_user.NetworkIdShort, _chat.PeerNetworkIdShort);
 
     private string SessionRoleLabel() => IsCryptoSessionLeader() ? "leader" : "follower";
 
@@ -579,33 +575,44 @@ public sealed class ChatP2PSession : IAsyncDisposable
 
             SubscribeToTransceivers();
 
-            try
+            // Only the crypto leader publishes invites / ChatRequests and drives test_send.
+            // Follower waits for invite/handshake and replies with test_response.
+            var isLeader = IsCryptoSessionLeader();
+
+            if (isLeader)
             {
-                var servers = _runtime.MessengerServers;
-                if (servers != null)
+                try
                 {
-                    await servers.PublishChatRequestAsync(_chat.PeerNetworkIdShort, cancellationToken)
-                        .ConfigureAwait(false);
-                    if (_deliveryPath != ChatDeliveryPath.Mesh)
-                        await TryServerFallbackAsync(cancellationToken).ConfigureAwait(false);
+                    var servers = _runtime.MessengerServers;
+                    if (servers != null)
+                    {
+                        await servers.PublishChatRequestAsync(_chat.PeerNetworkIdShort, cancellationToken)
+                            .ConfigureAwait(false);
+                        if (_deliveryPath != ChatDeliveryPath.Mesh)
+                            await TryServerFallbackAsync(cancellationToken).ConfigureAwait(false);
+                    }
                 }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Chat {ChatId}: server ChatRequest publish failed during session start", _chat.Id);
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Chat {ChatId}: server ChatRequest publish failed during session start",
+                        _chat.Id);
+                }
             }
 
             var udpUnavailable = false;
-            try
+            if (isLeader)
             {
-                if (_deliveryPath != ChatDeliveryPath.Server)
-                    await SendChatInviteWithRetryAsync(cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Chat {ChatId}: invite send failed during session start", _chat.Id);
-                if (IsUdpUnavailableError(ex))
-                    _udpOutboundUnavailable = true;
+                try
+                {
+                    if (_deliveryPath != ChatDeliveryPath.Server)
+                        await SendChatInviteWithRetryAsync(cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Chat {ChatId}: invite send failed during session start", _chat.Id);
+                    if (IsUdpUnavailableError(ex))
+                        _udpOutboundUnavailable = true;
+                }
             }
 
             udpUnavailable = IsUdpConnectionUnavailable();
@@ -614,7 +621,8 @@ public sealed class ChatP2PSession : IAsyncDisposable
                 _udpFallbackApplied = 1;
                 _udpOutboundUnavailable = true;
                 udpUnavailable = true;
-                await TryServerFallbackAsync(cancellationToken).ConfigureAwait(false);
+                if (isLeader)
+                    await TryServerFallbackAsync(cancellationToken).ConfigureAwait(false);
             }
             else if (_deliveryPath == ChatDeliveryPath.Mesh)
             {
@@ -650,7 +658,20 @@ public sealed class ChatP2PSession : IAsyncDisposable
                 udpUnavailable = true;
             }
 
-            _ = TryConfirmCryptoSessionAsync(cancellationToken);
+            if (isLeader)
+                _ = TryConfirmCryptoSessionAsync(cancellationToken);
+            else
+            {
+                // Nudge leader once; do not start a probe/retry loop on the follower.
+                try
+                {
+                    await SendSessionSetupRequestPacketAsync(cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Chat {ChatId}: follower 0x04 nudge on start failed", _chat.Id);
+                }
+            }
 
             HookPresenceForPendingFlush();
             _startFinished = true;
@@ -684,8 +705,7 @@ public sealed class ChatP2PSession : IAsyncDisposable
             return;
         var handshake = _runtime.Handshake;
         var message = _runtime.Message;
-        var invite = _runtime.Invite;
-        if (handshake == null && message == null && invite == null)
+        if (handshake == null && message == null)
             return;
 
         if (handshake != null)
@@ -694,8 +714,8 @@ public sealed class ChatP2PSession : IAsyncDisposable
         if (message != null)
             message.GotData += OnCipherReceived;
 
-        if (invite != null)
-            invite.GotData += OnInviteReceived;
+        // UDP invites are handled solely by UserP2pRuntime → HandlePeerInviteResyncAsync
+        // (subscribing here too caused a dual-handler resync storm).
 
         _transceiverSubscribed = true;
     }
@@ -711,10 +731,6 @@ public sealed class ChatP2PSession : IAsyncDisposable
         var message = _runtime.Message;
         if (message != null)
             message.GotData -= OnCipherReceived;
-
-        var invite = _runtime.Invite;
-        if (invite != null)
-            invite.GotData -= OnInviteReceived;
 
         _transceiverSubscribed = false;
     }
@@ -890,38 +906,10 @@ public sealed class ChatP2PSession : IAsyncDisposable
         return shouldNotify;
     }
 
-    private void OnInviteReceived(object? sender, InviteMessage msg)
-    {
-        if (!ShouldAcceptIncomingFrom(msg.RemoteAddress))
-            return;
-        if (!ChatInviteCodec.TryParse(msg.RawPayload.Span, out var peerId, out _, out _, out _, out _))
-            return;
-        if (!ChatRepository.PeerNetworkIdsEqual(peerId.ToShortString(), _chat.PeerNetworkIdShort))
-            return;
-
-        var token = _cts?.Token ?? CancellationToken.None;
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                await IncomingChatInviteHandler.TryAcceptAsync(msg.RawPayload, _auth, _repo,
-                    SendInviteRawAsync, msg.RemoteAddress, _routingSettings,
-                    _routingSettings?.EnableBluetoothTransport == false
-                        ? null
-                        : _routingSettings?.SelectedBluetoothAdapterMac,
-                    CancellationToken.None).ConfigureAwait(false);
-                await HandlePeerInviteResyncAsync(CancellationToken.None).ConfigureAwait(false);
-            }
-            catch
-            {
-                // ignore
-            }
-        }, token);
-    }
-
     /// <summary>
-    ///     Peer (re)invite arrived: reload route/key from DB, drop AES state, renegotiate, then run the
-    ///     hidden test_send / test_response confirmation loop.
+    ///     Peer (re)invite / ChatRequest arrived: reload route/key from DB and drop AES state.
+    ///     Only the crypto leader re-initiates handshake and the test_send verification loop;
+    ///     the follower accepts the reset and waits for leader handshake / test_send.
     /// </summary>
     public async Task HandlePeerInviteResyncAsync(CancellationToken cancellationToken = default)
     {
@@ -942,9 +930,10 @@ public sealed class ChatP2PSession : IAsyncDisposable
                 : null;
             var token = linked?.Token ?? cancellationToken;
 
+            var isLeader = IsCryptoSessionLeader();
             _logger.LogInformation(
-                "Chat {ChatId}: peer invite — resetting crypto and re-establishing session",
-                _chat.Id);
+                "Chat {ChatId}: peer invite — resetting crypto (role={Role}, drive={Drive})",
+                _chat.Id, SessionRoleLabel(), isLeader);
             SetHandshakeStatus(ChatHandshakeStatus.InProgress);
 
             var fresh = await _repo.GetChatAsync(_chat.Id).ConfigureAwait(false);
@@ -952,8 +941,26 @@ public sealed class ChatP2PSession : IAsyncDisposable
                 ApplyChatRow(fresh);
 
             await ResetCryptoStateAsync(token).ConfigureAwait(false);
-            await EnsureSessionAsInitiatorAsync(token).ConfigureAwait(false);
-            _ = TryConfirmCryptoSessionAsync(token);
+
+            if (isLeader)
+            {
+                await EnsureSessionAsInitiatorAsync(token).ConfigureAwait(false);
+                _ = TryConfirmCryptoSessionAsync(token);
+            }
+            else
+            {
+                // Follower: accept new session; nudge leader once; do not start probe retries.
+                try
+                {
+                    await SendSessionSetupRequestPacketAsync(token).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Chat {ChatId}: follower 0x04 after invite resync failed", _chat.Id);
+                }
+
+                RefreshHandshakeStatus();
+            }
         }
         catch (OperationCanceledException)
         {
@@ -988,25 +995,39 @@ public sealed class ChatP2PSession : IAsyncDisposable
         _chat.RelayRouteBlob = null;
         RebuildRouteFromChat();
         await ResetCryptoStateAsync(cancellationToken).ConfigureAwait(false);
-        try
+        if (IsCryptoSessionLeader())
         {
-            await SendChatInviteWithRetryAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch
-        {
-            // ignore
-        }
+            try
+            {
+                await SendChatInviteWithRetryAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+                // ignore
+            }
 
-        try
-        {
-            await EnsureSessionAsInitiatorAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch
-        {
-            // ignore
-        }
+            try
+            {
+                await EnsureSessionAsInitiatorAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+                // ignore
+            }
 
-        _ = TryConfirmCryptoSessionAsync(cancellationToken);
+            _ = TryConfirmCryptoSessionAsync(cancellationToken);
+        }
+        else
+        {
+            try
+            {
+                await SendSessionSetupRequestPacketAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+                // ignore
+            }
+        }
     }
 
     /// <summary>Временная отладка UI: сброс AES и повторная установка сессии по правилам лидера/подписчика.</summary>
@@ -1015,10 +1036,18 @@ public sealed class ChatP2PSession : IAsyncDisposable
         if (_cts == null)
             throw new InvalidOperationException("Сессия чата не запущена.");
 
-        _logger.LogInformation("Chat {ChatId}: manual crypto reset and handshake requested", _chat.Id);
+        _logger.LogInformation("Chat {ChatId}: manual crypto reset and handshake requested (role={Role})",
+            _chat.Id, SessionRoleLabel());
         await ResetCryptoStateAsync(cancellationToken).ConfigureAwait(false);
-        await EnsureSessionAsInitiatorAsync(cancellationToken).ConfigureAwait(false);
-        _ = TryConfirmCryptoSessionAsync(cancellationToken);
+        if (IsCryptoSessionLeader())
+        {
+            await EnsureSessionAsInitiatorAsync(cancellationToken).ConfigureAwait(false);
+            _ = TryConfirmCryptoSessionAsync(cancellationToken);
+        }
+        else
+        {
+            await SendSessionSetupRequestPacketAsync(cancellationToken).ConfigureAwait(false);
+        }
     }
 
     /// <summary>Временная отладка UI: chat invite (frame 0x30) на адреса пира.</summary>
@@ -2036,9 +2065,25 @@ public sealed class ChatP2PSession : IAsyncDisposable
             if (now - _lastDecryptRecoveryUtc < DecryptRecoveryCooldown)
                 return;
             _lastDecryptRecoveryUtc = now;
-            _logger.LogWarning("Chat {ChatId}: decrypt failure, starting crypto recovery", _chat.Id);
+            _logger.LogWarning("Chat {ChatId}: decrypt failure, starting crypto recovery (role={Role})",
+                _chat.Id, SessionRoleLabel());
 
             await ResetCryptoStateAsync(token).ConfigureAwait(false);
+            if (!IsCryptoSessionLeader())
+            {
+                // Follower only clears AES and nudges; leader drives invite + test_send retries.
+                try
+                {
+                    await SendSessionSetupRequestPacketAsync(token).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Chat {ChatId}: follower 0x04 after decrypt failure failed", _chat.Id);
+                }
+
+                return;
+            }
+
             await SendChatInviteWithRetryAsync(token).ConfigureAwait(false);
             await EnsureSessionAsInitiatorAsync(token).ConfigureAwait(false);
             _ = TryConfirmCryptoSessionAsync(token);
@@ -2304,13 +2349,16 @@ public sealed class ChatP2PSession : IAsyncDisposable
     {
         if (_cryptoProbeRoundTripOk)
             return;
+        // Hard gate: followers must never enter the test_send / renegotiation retry loop.
+        if (!CryptoSessionLeadership.ShouldDriveSessionVerification(IsCryptoSessionLeader()))
+            return;
 
         if (!await _cryptoProbeLoopLock.WaitAsync(0, cancellationToken).ConfigureAwait(false))
             return;
 
         try
         {
-            if (!_handshakeWeInitiated)
+            if (!_handshakeWeInitiated || !IsCryptoSessionLeader())
                 return;
 
             SetHandshakeStatus(ChatHandshakeStatus.InProgress);
@@ -2327,7 +2375,7 @@ public sealed class ChatP2PSession : IAsyncDisposable
                     ms = _messenger;
                 }
 
-                var canProbe = ms != null && _handshakeWeInitiated;
+                var canProbe = ms != null && _handshakeWeInitiated && IsCryptoSessionLeader();
                 if (canProbe)
                 {
                     var my = _user.NetworkIdShort.Trim();
@@ -3045,8 +3093,25 @@ public sealed class ChatP2PSession : IAsyncDisposable
         {
             try
             {
-                await EnsureSessionAsInitiatorAsync(cancellationToken).ConfigureAwait(false);
-                _ = TryConfirmCryptoSessionAsync(cancellationToken);
+                if (IsCryptoSessionLeader())
+                {
+                    await EnsureSessionAsInitiatorAsync(cancellationToken).ConfigureAwait(false);
+                    _ = TryConfirmCryptoSessionAsync(cancellationToken);
+                }
+                else
+                {
+                    // ChatRequest from TryServerFallback notifies the leader; follower waits.
+                    SetHandshakeStatus(ChatHandshakeStatus.InProgress);
+                    try
+                    {
+                        await SendSessionSetupRequestPacketAsync(cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogDebug(ex, "Chat {ChatId}: follower 0x04 after server-path switch failed",
+                            _chat.Id);
+                    }
+                }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -3075,9 +3140,17 @@ public sealed class ChatP2PSession : IAsyncDisposable
         Exception? connectError = null;
         try
         {
+            // Notify peer of path change; only leader drives handshake + test_send loop.
             await SendChatInviteWithRetryAsync(cancellationToken).ConfigureAwait(false);
-            await EnsureSessionAsInitiatorAsync(cancellationToken).ConfigureAwait(false);
-            _ = TryConfirmCryptoSessionAsync(cancellationToken);
+            if (IsCryptoSessionLeader())
+            {
+                await EnsureSessionAsInitiatorAsync(cancellationToken).ConfigureAwait(false);
+                _ = TryConfirmCryptoSessionAsync(cancellationToken);
+            }
+            else
+            {
+                SetHandshakeStatus(ChatHandshakeStatus.InProgress);
+            }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
