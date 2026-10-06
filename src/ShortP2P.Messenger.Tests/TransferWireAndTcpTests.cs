@@ -38,6 +38,25 @@ public class TransferWireAndTcpTests
     }
 
     [Fact]
+    public void ChatWireCodec_UserInfo_Roundtrip()
+    {
+        var about = "Hello — о себе";
+        var avatar = Enumerable.Range(0, 128).Select(i => (byte)i).ToArray();
+
+        var wire = ChatWireCodec.EncodeUserInfo(about, avatar);
+        Assert.True(ChatWireCodec.TryParse(wire, out var parsed));
+        var got = Assert.IsType<ChatWireUserInfo>(parsed);
+        Assert.Equal(about, got.AboutMe);
+        Assert.Equal(avatar, got.Avatar);
+
+        var emptyWire = ChatWireCodec.EncodeUserInfo("", ReadOnlySpan<byte>.Empty);
+        Assert.True(ChatWireCodec.TryParse(emptyWire, out var emptyParsed));
+        var emptyGot = Assert.IsType<ChatWireUserInfo>(emptyParsed);
+        Assert.Equal("", emptyGot.AboutMe);
+        Assert.Null(emptyGot.Avatar);
+    }
+
+    [Fact]
     public async Task TcpTransferService_SendAndReceive_Roundtrip()
     {
         var transfer = new TcpTransferService();

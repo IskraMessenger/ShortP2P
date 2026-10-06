@@ -1,12 +1,14 @@
 using Microsoft.Extensions.Logging;
 using ShortP2P.Auth;
 using ShortP2P.Auth.Data;
+using ShortP2P.Client.Services;
 
 namespace ShortP2P.MauiApp;
 
 public sealed class ProfilePage : ContentPage
 {
     private readonly AuthService _auth;
+    private readonly UserP2pRuntime _p2p;
     private readonly ILogger<ProfilePage> _logger;
     private readonly Editor _aboutMe;
     private readonly Label _aboutCounter;
@@ -14,9 +16,10 @@ public sealed class ProfilePage : ContentPage
     private readonly Label _status;
     private byte[]? _avatarBytes;
 
-    public ProfilePage(AuthService auth, ILogger<ProfilePage> logger)
+    public ProfilePage(AuthService auth, UserP2pRuntime p2p, ILogger<ProfilePage> logger)
     {
         _auth = auth;
+        _p2p = p2p;
         _logger = logger;
         Title = "My profile";
 
@@ -176,6 +179,7 @@ public sealed class ProfilePage : ContentPage
                 return;
             }
 
+            _ = _p2p.BroadcastLocalUserInfoToContactsAsync();
             _status.Text = "Saved.";
             await Navigation.PopAsync().ConfigureAwait(true);
         }

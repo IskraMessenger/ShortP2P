@@ -88,19 +88,19 @@ public sealed class UserP2pRuntime : IAsyncDisposable
             additionalDiscoveryTransports, routeTableSnapshotSource, discoveryPingStore, blePeripheralScanner,
             bleDiscoveredPeerStore, bluetoothPresencePingTargetsProvider, peerProfileStore, localPeerProfileSource,
             _loggerFactory.CreateLogger("ShortP2P.Discovery.LocalNetworkScanner"));
-        if (MessengerServers != null)
+        
+        if (MessengerServers == null) return;
+        
+        LocalScan.PrioritizedExternalDiscoveryRound = async ct =>
         {
-            LocalScan.PrioritizedExternalDiscoveryRound = async ct =>
-            {
-                var remote = await MessengerServers.KeepAliveAndListRemoteClientsAsync(ct).ConfigureAwait(false);
-                var entries = remote.Select(ToDirectoryEntry).ToArray();
-                LocalScan.ApplyMessengerServerDirectory(entries);
-                await SyncChatNicknamesFromPresenceAsync(remote, ct).ConfigureAwait(false);
-            };
-            LocalScan.RequestPeerProfileViaMessengerServer = (id, ct) =>
-                MessengerServers.RequestPeerProfileViaForwardAsync(id, ct);
-            MessengerServers.PeerAboutMeApplied = (id, about) => LocalScan.ApplyCachedAboutMe(id, about);
-        }
+            var remote = await MessengerServers.KeepAliveAndListRemoteClientsAsync(ct).ConfigureAwait(false);
+            var entries = remote.Select(ToDirectoryEntry).ToArray();
+            LocalScan.ApplyMessengerServerDirectory(entries);
+            await SyncChatNicknamesFromPresenceAsync(remote, ct).ConfigureAwait(false);
+        };
+        LocalScan.RequestPeerProfileViaMessengerServer = (id, ct) =>
+            MessengerServers.RequestPeerProfileViaForwardAsync(id, ct);
+        MessengerServers.PeerAboutMeApplied = (id, about) => LocalScan.ApplyCachedAboutMe(id, about);
     }
 
     /// <summary>Optional HTTPS messenger-server sync (long-poll inbox, ChatRequest, messages).</summary>
@@ -216,6 +216,45 @@ public sealed class UserP2pRuntime : IAsyncDisposable
     public void MarkChatSessionStarted(int chatId)
     {
         _sessionCache.MarkStarted(chatId);
+    }
+
+    /// <summary>
+    ///     TRL-7: push local AboutMe + Avatar to every chat contact (best-effort; mesh and/or messenger server).
+    /// </summary>
+    public async Task BroadcastLocalUserInfoToContactsAsync(CancellationToken cancellationToken = default)
+    {
+        var user = _auth.CurrentUser;
+        if (user == null)
+            return;
+
+        IReadOnlyList<ChatEntity> chats;
+        try
+        {
+            chats = await _chats.ListChatsAsync(user.Id).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "UserInfo broadcast: failed to list chats");
+            return;
+        }
+
+        foreach (var chat in chats)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                if (await _chats.IsPeerBlockedAsync(user.Id, chat.PeerNetworkIdShort, cancellationToken)
+                        .ConfigureAwait(false))
+                    continue;
+
+                var session = GetSession(chat, user, _auth, _chats, null);
+                await session.SendLocalUserInfoAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogDebug(ex, "UserInfo broadcast to chat {ChatId} failed (best-effort)", chat.Id);
+            }
+        }
     }
 
     /// <summary>Останавливает и снимает P2P-сессию для удалённого из БД чата.</summary>

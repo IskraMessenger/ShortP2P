@@ -15,6 +15,7 @@ using ShortP2P.Client.Transceivers;
 using ShortP2P.Client.Transport;
 using ShortP2P.Crypto;
 using ShortP2P.Discovery;
+using ShortP2P.Discovery.Profile;
 using ShortP2P.Discovery.Transceivers;
 using ShortP2P.Messenger;
 using ShortP2P.Client.Services.MessengerServers;
@@ -68,6 +69,7 @@ public sealed class ChatP2PSession : IAsyncDisposable
     private readonly UserEntity _user;
     private TaskCompletionSource<bool>? _cryptoProbeOkAwaiter;
     private volatile bool _cryptoProbeRoundTripOk;
+    private volatile bool _userInfoSharedAfterEstablish;
     private string? _outstandingTestSendHash;
     private CancellationTokenSource? _cts;
     private int _decryptRecoveryGate;
@@ -856,6 +858,9 @@ public sealed class ChatP2PSession : IAsyncDisposable
                     await HandleTransferControlAsync(control, cancellationToken).ConfigureAwait(false);
                     shouldNotify = true;
                     break;
+                case ChatWireUserInfo userInfo:
+                    await ApplyIncomingUserInfoAsync(userInfo, cancellationToken).ConfigureAwait(false);
+                    break;
             }
         }
         else if (ChatWireCodec.LooksLikeFramedWire(payload))
@@ -1565,6 +1570,63 @@ public sealed class ChatP2PSession : IAsyncDisposable
             deliveryToken).ConfigureAwait(false);
     }
 
+    /// <summary>TRL-7: push local AboutMe + Avatar to this chat peer (not stored in chat history).</summary>
+    public async Task SendLocalUserInfoAsync(CancellationToken cancellationToken = default)
+    {
+        var user = _auth.CurrentUser ?? _user;
+        var about = user.AboutMe ?? "";
+        var wire = ChatWireCodec.EncodeUserInfo(about, user.Avatar ?? Array.Empty<byte>());
+        await SendWireAsync(wire, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task ApplyIncomingUserInfoAsync(ChatWireUserInfo info, CancellationToken cancellationToken)
+    {
+        var store = _runtime.PeerProfiles;
+        if (store == null)
+            return;
+
+        try
+        {
+            var peerId = CompressedNetworkId.FromShortString(_chat.PeerNetworkIdShort);
+            var nick = string.IsNullOrWhiteSpace(_chat.PeerNickname) ? null : _chat.PeerNickname.Trim();
+            await store.UpsertAsync(peerId, nick, info.AboutMe ?? "", info.Avatar, cancellationToken)
+                .ConfigureAwait(false);
+            _runtime.LocalScan.ApplyCachedAboutMe(peerId, info.AboutMe ?? "");
+            _logger.LogInformation(
+                "Chat {ChatId}: applied peer UserInfo (aboutLen={AboutLen}, avatarBytes={AvatarBytes})",
+                _chat.Id, info.AboutMe?.Length ?? 0, info.Avatar?.Length ?? 0);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Chat {ChatId}: failed to apply incoming UserInfo (best-effort)", _chat.Id);
+        }
+    }
+
+    private void MarkCryptoSessionEstablished(CancellationToken cancellationToken)
+    {
+        var firstTime = !_cryptoProbeRoundTripOk;
+        _cryptoProbeRoundTripOk = true;
+        RefreshHandshakeStatus();
+        if (!firstTime || _userInfoSharedAfterEstablish)
+            return;
+        _userInfoSharedAfterEstablish = true;
+        _ = ShareLocalUserInfoAfterEstablishAsync(cancellationToken);
+    }
+
+    private async Task ShareLocalUserInfoAfterEstablishAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await SendLocalUserInfoAsync(cancellationToken).ConfigureAwait(false);
+            _logger.LogInformation("Chat {ChatId}: shared local UserInfo after session establish", _chat.Id);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _userInfoSharedAfterEstablish = false;
+            _logger.LogWarning(ex, "Chat {ChatId}: UserInfo share after establish failed (best-effort)", _chat.Id);
+        }
+    }
+
     public async ValueTask RetryFailedMessageAsync(int messageId, CancellationToken cancellationToken = default)
     {
         var row = await _repo.GetMessageAsync(messageId).ConfigureAwait(false);
@@ -2012,6 +2074,7 @@ public sealed class ChatP2PSession : IAsyncDisposable
             CancelFollowerHandshakeWait();
             _handshakeWeInitiated = false;
             _cryptoProbeRoundTripOk = false;
+            _userInfoSharedAfterEstablish = false;
             _messenger = null;
         }
 
@@ -2288,8 +2351,7 @@ public sealed class ChatP2PSession : IAsyncDisposable
                             _chat.Id, sendHash);
                         await SendEncryptedProbeWireAsync(testWire, cancellationToken).ConfigureAwait(false);
                         await tcs.Task.WaitAsync(okWait, cancellationToken).ConfigureAwait(false);
-                        _cryptoProbeRoundTripOk = true;
-                        RefreshHandshakeStatus();
+                        MarkCryptoSessionEstablished(cancellationToken);
                         _logger.LogInformation(
                             "Chat {ChatId}: crypto probe round-trip confirmed (test_response for {Hash})",
                             _chat.Id, sendHash);
@@ -2428,8 +2490,7 @@ public sealed class ChatP2PSession : IAsyncDisposable
                 _chat.Id, message.ContentHash);
             _ = SendCryptoProbeTestResponseAsync(message.ContentHash, cancellationToken);
             // Decrypting a valid test_send proves the follower path; mark confirmed for UI.
-            _cryptoProbeRoundTripOk = true;
-            RefreshHandshakeStatus();
+            MarkCryptoSessionEstablished(cancellationToken);
             return true;
         }
 
@@ -2748,6 +2809,7 @@ public sealed class ChatP2PSession : IAsyncDisposable
             CancelFollowerHandshakeWait();
             _handshakeWeInitiated = false;
             _cryptoProbeRoundTripOk = false;
+            _userInfoSharedAfterEstablish = false;
         }
 
         _messenger = null;

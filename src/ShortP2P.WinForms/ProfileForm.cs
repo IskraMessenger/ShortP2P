@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using ShortP2P.Auth;
 using ShortP2P.Auth.Data;
+using ShortP2P.Client.Services;
 
 namespace ShortP2P.WinForms;
 
@@ -8,6 +9,7 @@ namespace ShortP2P.WinForms;
 public sealed class ProfileForm : Form
 {
     private readonly AuthService _auth;
+    private readonly UserP2pRuntime _p2p;
     private readonly ILogger<ProfileForm> _logger;
     private readonly PictureBox _avatarPreview = new()
     {
@@ -34,9 +36,10 @@ public sealed class ProfileForm : Form
 
     private byte[]? _avatarBytes;
 
-    public ProfileForm(AuthService auth, ILogger<ProfileForm> logger)
+    public ProfileForm(AuthService auth, UserP2pRuntime p2p, ILogger<ProfileForm> logger)
     {
         _auth = auth;
+        _p2p = p2p;
         _logger = logger;
         Text = "Мой профиль";
         StartPosition = FormStartPosition.CenterParent;
@@ -220,6 +223,7 @@ public sealed class ProfileForm : Form
                 return;
             }
 
+            _ = _p2p.BroadcastLocalUserInfoToContactsAsync();
             DialogResult = DialogResult.OK;
             Close();
         }

@@ -1598,6 +1598,10 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
                             offer.ExpiresUtcTicks)
                         .ConfigureAwait(false);
                     return;
+                case ChatWireUserInfo userInfo:
+                    await ApplyIncomingUserInfoFromServerAsync(chatId, userInfo, CancellationToken.None)
+                        .ConfigureAwait(false);
+                    return;
                 default:
                     await _chats.AddMessageAsync(chatId, false, "[Серверное сообщение: неподдерживаемый тип]")
                         .ConfigureAwait(false);
@@ -1607,6 +1611,35 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
 
         var fallback = Encoding.UTF8.GetString(wire);
         await _chats.AddMessageAsync(chatId, false, fallback).ConfigureAwait(false);
+    }
+
+    private async Task ApplyIncomingUserInfoFromServerAsync(
+        int chatId,
+        ChatWireUserInfo info,
+        CancellationToken cancellationToken)
+    {
+        if (_peerProfiles == null)
+            return;
+
+        try
+        {
+            var chat = await _chats.GetChatAsync(chatId).ConfigureAwait(false);
+            if (chat == null || string.IsNullOrWhiteSpace(chat.PeerNetworkIdShort))
+                return;
+
+            var peerId = CompressedNetworkId.FromShortString(chat.PeerNetworkIdShort);
+            var nick = string.IsNullOrWhiteSpace(chat.PeerNickname) ? null : chat.PeerNickname.Trim();
+            await _peerProfiles.UpsertAsync(peerId, nick, info.AboutMe ?? "", info.Avatar, cancellationToken)
+                .ConfigureAwait(false);
+            PeerAboutMeApplied?.Invoke(peerId, info.AboutMe ?? "");
+            _logger.LogInformation(
+                "Chat {ChatId}: applied peer UserInfo from server inbox (aboutLen={AboutLen}, avatarBytes={AvatarBytes})",
+                chatId, info.AboutMe?.Length ?? 0, info.Avatar?.Length ?? 0);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Chat {ChatId}: failed to apply UserInfo from server (best-effort)", chatId);
+        }
     }
 
     private void OnFailoverCompleted(object? sender, MessengerServerFailoverEventArgs e)

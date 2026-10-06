@@ -240,6 +240,29 @@ public sealed class ChatP2PSession
         string? serverBaseUrl = null) =>
         Task.CompletedTask;
 
+    /// <summary>Fx48: no mesh handshake; re-queue pending sends after a peer ChatRequest resync.</summary>
+    public Task HandlePeerInviteResyncAsync(CancellationToken cancellationToken = default) =>
+        EnqueueExistingPendingAsync(cancellationToken);
+
+    /// <summary>TRL-7: push local AboutMe + Avatar via messenger server (not stored in chat history).</summary>
+    public async Task SendLocalUserInfoAsync(CancellationToken cancellationToken = default)
+    {
+        var latest = await _repo.GetChatAsync(_chat.Id).ConfigureAwait(false);
+        if (latest != null)
+            ApplyChatRow(latest);
+
+        var about = _user.AboutMe ?? "";
+        var wire = ChatWireCodec.EncodeUserInfo(about, _user.Avatar ?? Array.Empty<byte>());
+        var acceptedId = await _servers
+            .TryDeliverWireAsync(_chat, _user, wire, cancellationToken)
+            .ConfigureAwait(false);
+        if (string.IsNullOrEmpty(acceptedId))
+        {
+            throw new InvalidOperationException(
+                "Messenger server did not accept UserInfo (no peer key or no ready server).");
+        }
+    }
+
     /// <summary>
     /// Ensures a ChatRequest is published so PeerRsaPublicJson can land via long-poll,
     /// then re-queues any leftover Pending outgoing rows for this chat.

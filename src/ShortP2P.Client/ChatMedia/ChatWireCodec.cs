@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Text;
 using System.Text.Json;
+using ShortP2P.Auth.Data;
 
 namespace ShortP2P.Client.ChatMedia;
 
@@ -15,6 +16,7 @@ public static class ChatWireCodec
     private const byte KindFile = 0x03;
     private const byte KindTransferOffer = 0x04;
     private const byte KindTransferControl = 0x05;
+    private const byte KindUserInfo = 0x06;
     private static ReadOnlySpan<byte> Magic => "S2P1"u8;
 
     /// <summary>Магия S2P1 без успешного разбора вида — чтобы не показывать мусор как текст UTF-8.</summary>
@@ -87,6 +89,37 @@ public static class ChatWireCodec
     public static byte[] EncodeTransferControl(ChatWireTransferControl control)
     {
         return EncodeJsonFrame(KindTransferControl, JsonSerializer.SerializeToUtf8Bytes(control));
+    }
+
+    /// <summary>
+    ///     TRL-7: push own AboutMe + Avatar to a peer (not shown in chat history).
+    ///     Layout after kind: aboutLen u16 LE + AboutMe UTF-8 + avatarLen u32 LE + Avatar.
+    /// </summary>
+    public static byte[] EncodeUserInfo(string aboutMe, ReadOnlySpan<byte> avatar)
+    {
+        aboutMe ??= "";
+        if (aboutMe.Length > PeerProfileLimits.MaxAboutMeChars)
+            aboutMe = aboutMe[..PeerProfileLimits.MaxAboutMeChars];
+
+        var aboutBytes = Encoding.UTF8.GetBytes(aboutMe);
+        if (aboutBytes.Length > PeerProfileLimits.MaxAboutMeUtf8Bytes)
+            aboutBytes = aboutBytes.AsSpan(0, PeerProfileLimits.MaxAboutMeUtf8Bytes).ToArray();
+
+        if (avatar.Length > PeerProfileLimits.MaxAvatarBytes)
+            avatar = avatar[..PeerProfileLimits.MaxAvatarBytes];
+
+        var buf = new byte[Magic.Length + 1 + 2 + aboutBytes.Length + 4 + avatar.Length];
+        Magic.CopyTo(buf);
+        buf[Magic.Length] = KindUserInfo;
+        var o = Magic.Length + 1;
+        BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(o, 2), (ushort)aboutBytes.Length);
+        o += 2;
+        aboutBytes.CopyTo(buf.AsSpan(o));
+        o += aboutBytes.Length;
+        BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(o, 4), (uint)avatar.Length);
+        o += 4;
+        avatar.CopyTo(buf.AsSpan(o));
+        return buf;
     }
 
     private static byte[] EncodeJsonFrame(byte kind, byte[] jsonUtf8)
@@ -203,6 +236,40 @@ public static class ChatWireCodec
             }
         }
 
+        if (kind == KindUserInfo)
+        {
+            if (rest.Length < 2 + 4)
+                return false;
+            var aboutLen = BinaryPrimitives.ReadUInt16LittleEndian(rest);
+            rest = rest.Slice(2);
+            if (aboutLen > PeerProfileLimits.MaxAboutMeUtf8Bytes)
+                return false;
+            if (rest.Length < aboutLen + 4)
+                return false;
+            string about;
+            try
+            {
+                about = Utf8(rest.Slice(0, aboutLen));
+            }
+            catch
+            {
+                return false;
+            }
+
+            if (about.Length > PeerProfileLimits.MaxAboutMeChars)
+                about = about[..PeerProfileLimits.MaxAboutMeChars];
+            rest = rest.Slice(aboutLen);
+            var avatarLen = BinaryPrimitives.ReadUInt32LittleEndian(rest);
+            rest = rest.Slice(4);
+            if (avatarLen > PeerProfileLimits.MaxAvatarBytes)
+                return false;
+            if (rest.Length < avatarLen)
+                return false;
+            byte[]? avatar = avatarLen == 0 ? null : rest.Slice(0, (int)avatarLen).ToArray();
+            message = new ChatWireUserInfo(about, avatar);
+            return true;
+        }
+
         return false;
     }
 
@@ -248,3 +315,6 @@ public sealed record ChatWireTransferControl(
     int Port,
     long ExpiresUtcTicks,
     string ErrorCode) : ChatWireMessage;
+
+/// <summary>TRL-7: peer profile push (AboutMe + Avatar), not persisted as a chat bubble.</summary>
+public sealed record ChatWireUserInfo(string AboutMe, byte[]? Avatar) : ChatWireMessage;
