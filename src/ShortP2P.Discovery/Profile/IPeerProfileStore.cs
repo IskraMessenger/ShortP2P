@@ -18,11 +18,20 @@ public sealed class PeerProfileSnapshot
     public DateTimeOffset UpdatedUtc { get; init; }
 }
 
+/// <summary>Raised after a peer profile row is written to local storage.</summary>
+public sealed class PeerProfileChangedEventArgs(CompressedNetworkId networkId) : EventArgs
+{
+    public CompressedNetworkId NetworkId { get; } = networkId;
+}
+
 /// <summary>
-///     Локальное хранилище профилей пиров, полученных по wire (0x44/0x45) при discovery/скане.
+///     Локальное хранилище профилей пиров, полученных по wire (0x44/0x45 / ChatWireUserInfo) при discovery/чате.
 /// </summary>
 public interface IPeerProfileStore
 {
+    /// <summary>Fired after a successful <see cref="UpsertAsync" /> (any thread).</summary>
+    event EventHandler<PeerProfileChangedEventArgs>? Changed;
+
     ValueTask UpsertAsync(CompressedNetworkId networkId, string? nickname, string aboutMe, byte[]? avatar,
         CancellationToken cancellationToken = default);
 

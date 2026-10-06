@@ -2,7 +2,7 @@ namespace ShortP2P.MessengerServer.Contracts;
 
 /// <summary>
 /// Payload limits for <c>POST /api/v1/forward</c> peer-profile frames.
-/// Mirrors <c>PeerProfileLimits</c> / <c>PeerProfileWireCodec</c> (Avatar ≤20 KB).
+/// Mirrors <c>PeerProfileLimits</c> / <c>PeerProfileWireCodec</c> (Avatar ≤12 KB).
 /// </summary>
 public static class ForwardLimits
 {
@@ -15,7 +15,7 @@ public static class ForwardLimits
 
     public const int MaxAboutMeUtf8Bytes = 250 * 4;
 
-    public const int MaxAvatarBytes = 20 * 1024;
+    public const int MaxAvatarBytes = 12 * 1024;
 
     /// <summary>Max decoded 0x45 length: frame + nonce + id + aboutLen + about + avatarLen + avatar.</summary>
     public const int MaxReplyLength =

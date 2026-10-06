@@ -94,6 +94,8 @@ public static class ChatWireCodec
     /// <summary>
     ///     TRL-7: push own AboutMe + Avatar to a peer (not shown in chat history).
     ///     Layout after kind: aboutLen u16 LE + AboutMe UTF-8 + avatarLen u32 LE + Avatar.
+    ///     Oversized avatars are JPEG-compressed to <see cref="PeerProfileLimits.MaxAvatarBytes"/>;
+    ///     never raw-truncated (that corrupts the image).
     /// </summary>
     public static byte[] EncodeUserInfo(string aboutMe, ReadOnlySpan<byte> avatar)
     {
@@ -105,10 +107,18 @@ public static class ChatWireCodec
         if (aboutBytes.Length > PeerProfileLimits.MaxAboutMeUtf8Bytes)
             aboutBytes = aboutBytes.AsSpan(0, PeerProfileLimits.MaxAboutMeUtf8Bytes).ToArray();
 
-        if (avatar.Length > PeerProfileLimits.MaxAvatarBytes)
-            avatar = avatar[..PeerProfileLimits.MaxAvatarBytes];
+        ReadOnlySpan<byte> avatarSpan = avatar;
+        byte[]? compressed = null;
+        if (avatarSpan.Length > PeerProfileLimits.MaxAvatarBytes)
+        {
+            if (ImageAttachmentCompressor.TryCompressToMaxBytes(avatar, PeerProfileLimits.MaxAvatarBytes,
+                    out compressed, out _))
+                avatarSpan = compressed;
+            else
+                avatarSpan = ReadOnlySpan<byte>.Empty;
+        }
 
-        var buf = new byte[Magic.Length + 1 + 2 + aboutBytes.Length + 4 + avatar.Length];
+        var buf = new byte[Magic.Length + 1 + 2 + aboutBytes.Length + 4 + avatarSpan.Length];
         Magic.CopyTo(buf);
         buf[Magic.Length] = KindUserInfo;
         var o = Magic.Length + 1;
@@ -116,9 +126,9 @@ public static class ChatWireCodec
         o += 2;
         aboutBytes.CopyTo(buf.AsSpan(o));
         o += aboutBytes.Length;
-        BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(o, 4), (uint)avatar.Length);
+        BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(o, 4), (uint)avatarSpan.Length);
         o += 4;
-        avatar.CopyTo(buf.AsSpan(o));
+        avatarSpan.CopyTo(buf.AsSpan(o));
         return buf;
     }
 
@@ -261,7 +271,8 @@ public static class ChatWireCodec
             rest = rest.Slice(aboutLen);
             var avatarLen = BinaryPrimitives.ReadUInt32LittleEndian(rest);
             rest = rest.Slice(4);
-            if (avatarLen > PeerProfileLimits.MaxAvatarBytes)
+            // Accept legacy ≤20KB frames; store layer shrinks to MaxAvatarBytes.
+            if (avatarLen > PeerProfileLimits.MaxAvatarDisplayBytes)
                 return false;
             if (rest.Length < avatarLen)
                 return false;

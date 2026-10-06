@@ -54,8 +54,9 @@ public static class PeerProfileWireCodec
             aboutBytes = aboutBytes.AsSpan(0, PeerProfileLimits.MaxAboutMeUtf8Bytes).ToArray();
 
         ReadOnlySpan<byte> avatarSpan = avatar ?? ReadOnlySpan<byte>.Empty;
+        // Never raw-truncate JPEG/PNG; omit if over wire limit (caller should compress first).
         if (avatarSpan.Length > PeerProfileLimits.MaxAvatarBytes)
-            avatarSpan = avatarSpan[..PeerProfileLimits.MaxAvatarBytes];
+            avatarSpan = ReadOnlySpan<byte>.Empty;
 
         // [0]=frame, [1..8]=nonce, [9..]=id, aboutLen u16 BE, about, avatarLen u16 BE, avatar
         var buf = new byte[ReplyFixedPrefixLength + aboutBytes.Length + 2 + avatarSpan.Length];
@@ -109,7 +110,7 @@ public static class PeerProfileWireCodec
 
         var avatarLenOff = aboutLenOff + 2 + aboutLen;
         var avatarLen = BinaryPrimitives.ReadUInt16BigEndian(datagram.Slice(avatarLenOff, 2));
-        if (avatarLen > PeerProfileLimits.MaxAvatarBytes)
+        if (avatarLen > PeerProfileLimits.MaxAvatarDisplayBytes)
             return false;
         if (datagram.Length < avatarLenOff + 2 + avatarLen)
             return false;

@@ -14,7 +14,7 @@ internal static class ForwardPayloadLimits
 
     public const int MaxAboutMeUtf8Bytes = 250 * 4;
 
-    public const int MaxAvatarBytes = 20 * 1024;
+    public const int MaxAvatarBytes = 12 * 1024;
 
     public const int MaxReplyLength =
         1 + 8 + NetworkIdWireLength + 2 + MaxAboutMeUtf8Bytes + 2 + MaxAvatarBytes;
