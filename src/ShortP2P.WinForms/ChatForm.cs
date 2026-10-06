@@ -356,11 +356,25 @@ public sealed class ChatForm : Form
             return;
 
         var menu = new ContextMenuStrip();
-        menu.Closed += (_, _) => menu.Dispose();
-        menu.Items.Add("Сервер", null, async (_, _) =>
-            await ApplyDeliveryPathAsync(ChatDeliveryPath.Server).ConfigureAwait(true));
-        menu.Items.Add("Mesh (UDP/BLE)", null, async (_, _) =>
-            await ApplyDeliveryPathAsync(ChatDeliveryPath.Mesh).ConfigureAwait(true));
+        ChatDeliveryPath? chosen = null;
+        menu.Items.Add("Сервер", null, (_, _) => chosen = ChatDeliveryPath.Server);
+        menu.Items.Add("Mesh (UDP/BLE)", null, (_, _) => chosen = ChatDeliveryPath.Mesh);
+        menu.Closed += (_, _) =>
+        {
+            // Dispose after Closed finishes — disposing inside Closed races ToolStripDropDown.CreateHandle.
+            var path = chosen;
+            void Finish()
+            {
+                menu.Dispose();
+                if (path != null)
+                    _ = ApplyDeliveryPathAsync(path.Value);
+            }
+
+            if (IsHandleCreated)
+                BeginInvoke(Finish);
+            else
+                Finish();
+        };
         menu.Show(_deliveryPath, new Point(0, _deliveryPath.Height));
     }
 
