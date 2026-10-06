@@ -618,6 +618,13 @@ public sealed class UserP2pRuntime : IAsyncDisposable
             var chat = await _chats.FindChatByPeerNetworkIdAsync(user.Id, peerShort).ConfigureAwait(false);
             if (chat == null)
                 return;
+
+            if (_sessionCache.IsStarted(chat.Id) && _sessionCache.TryGetSession(chat.Id, out var session))
+            {
+                await session.HandlePeerInviteResyncAsync(cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
             await TryEnsureChatSessionStartedAsync(chat.Id, null, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)

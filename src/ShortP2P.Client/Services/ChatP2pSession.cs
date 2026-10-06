@@ -42,6 +42,7 @@ public sealed class ChatP2PSession : IAsyncDisposable
     /// <summary>SHO-10: how many newest unsent outgoing rows to retry after UDP falls back.</summary>
     public const int UdpFallbackLatestUnsentCount = 20;
     private static readonly TimeSpan DecryptRecoveryCooldown = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan InviteResyncCooldown = TimeSpan.FromSeconds(3);
     private readonly SemaphoreSlim _cryptoProbeLoopLock = new(1, 1);
     private readonly P2pCryptoSessionCache _cryptoSessionCache;
     private readonly SemaphoreSlim _flushPendingSem = new(1, 1);
@@ -67,11 +68,14 @@ public sealed class ChatP2PSession : IAsyncDisposable
     private readonly UserEntity _user;
     private TaskCompletionSource<bool>? _cryptoProbeOkAwaiter;
     private volatile bool _cryptoProbeRoundTripOk;
+    private string? _outstandingTestSendHash;
     private CancellationTokenSource? _cts;
     private int _decryptRecoveryGate;
+    private int _inviteResyncGate;
+    private DateTimeOffset _lastInviteResyncUtc = DateTimeOffset.MinValue;
     private TaskCompletionSource<bool>? _followerHandshakeTcs;
 
-    /// <summary>True только у лидера (меньший NetworkId): отправлен свой RSA-handshake; зонд ACK/OK только с лидера.</summary>
+    /// <summary>True только у лидера (меньший NetworkId): отправлен свой RSA-handshake; test_send только с лидера.</summary>
     private bool _handshakeWeInitiated;
 
     private DateTimeOffset _lastDecryptRecoveryUtc = DateTimeOffset.MinValue;
@@ -410,13 +414,15 @@ public sealed class ChatP2PSession : IAsyncDisposable
 
     private void RefreshHandshakeStatus()
     {
-        if (_cryptoProbeRoundTripOk || (TryGetCryptoSession(out _) && _messenger != null))
+        // UI "сессия установлена" only after a matching test_response confirms the crypto path.
+        if (_cryptoProbeRoundTripOk)
         {
             SetHandshakeStatus(ChatHandshakeStatus.Established);
             return;
         }
 
-        if (_startInProgress || _startFinished || _handshakeWeInitiated)
+        if (_startInProgress || _startFinished || _handshakeWeInitiated ||
+            TryGetCryptoSession(out _) || _messenger != null)
         {
             SetHandshakeStatus(ChatHandshakeStatus.InProgress);
             return;
@@ -806,7 +812,14 @@ public sealed class ChatP2PSession : IAsyncDisposable
             switch (wire)
             {
                 case ChatWireText t:
-                    if (!TryHandleSessionCryptoProbeText(t.Text, cancellationToken))
+                    if (SessionCryptoProbe.LooksLikeTestMessage(t.Text))
+                    {
+                        if (!TryHandleSessionCryptoProbeText(t.Text, cancellationToken))
+                            _logger.LogWarning(
+                                "Chat {ChatId}: ignored malformed/unmatched session test frame (not shown in UI)",
+                                _chat.Id);
+                    }
+                    else
                     {
                         _ = await _repo.AddMessageAsync(_chat.Id, false, t.Text).ConfigureAwait(false);
                         shouldNotify = true;
@@ -855,7 +868,14 @@ public sealed class ChatP2PSession : IAsyncDisposable
         else
         {
             var text = Encoding.UTF8.GetString(payload);
-            if (!TryHandleSessionCryptoProbeText(text, cancellationToken))
+            if (SessionCryptoProbe.LooksLikeTestMessage(text))
+            {
+                if (!TryHandleSessionCryptoProbeText(text, cancellationToken))
+                    _logger.LogWarning(
+                        "Chat {ChatId}: ignored malformed/unmatched session test frame (not shown in UI)",
+                        _chat.Id);
+            }
+            else
             {
                 _ = await _repo.AddMessageAsync(_chat.Id, false, text).ConfigureAwait(false);
                 shouldNotify = true;
@@ -869,6 +889,11 @@ public sealed class ChatP2PSession : IAsyncDisposable
     {
         if (!ShouldAcceptIncomingFrom(msg.RemoteAddress))
             return;
+        if (!ChatInviteCodec.TryParse(msg.RawPayload.Span, out var peerId, out _, out _, out _, out _))
+            return;
+        if (!ChatRepository.PeerNetworkIdsEqual(peerId.ToShortString(), _chat.PeerNetworkIdShort))
+            return;
+
         var token = _cts?.Token ?? CancellationToken.None;
         _ = Task.Run(async () =>
         {
@@ -880,12 +905,63 @@ public sealed class ChatP2PSession : IAsyncDisposable
                         ? null
                         : _routingSettings?.SelectedBluetoothAdapterMac,
                     CancellationToken.None).ConfigureAwait(false);
+                await HandlePeerInviteResyncAsync(CancellationToken.None).ConfigureAwait(false);
             }
             catch
             {
                 // ignore
             }
         }, token);
+    }
+
+    /// <summary>
+    ///     Peer (re)invite arrived: reload route/key from DB, drop AES state, renegotiate, then run the
+    ///     hidden test_send / test_response confirmation loop.
+    /// </summary>
+    public async Task HandlePeerInviteResyncAsync(CancellationToken cancellationToken = default)
+    {
+        if (_cts == null)
+            return;
+        if (Interlocked.CompareExchange(ref _inviteResyncGate, 1, 0) != 0)
+            return;
+
+        try
+        {
+            var now = DateTimeOffset.UtcNow;
+            if (now - _lastInviteResyncUtc < InviteResyncCooldown)
+                return;
+            _lastInviteResyncUtc = now;
+
+            using var linked = _cts is { IsCancellationRequested: false } sessionCts
+                ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, sessionCts.Token)
+                : null;
+            var token = linked?.Token ?? cancellationToken;
+
+            _logger.LogInformation(
+                "Chat {ChatId}: peer invite — resetting crypto and re-establishing session",
+                _chat.Id);
+            SetHandshakeStatus(ChatHandshakeStatus.InProgress);
+
+            var fresh = await _repo.GetChatAsync(_chat.Id).ConfigureAwait(false);
+            if (fresh != null)
+                ApplyChatRow(fresh);
+
+            await ResetCryptoStateAsync(token).ConfigureAwait(false);
+            await EnsureSessionAsInitiatorAsync(token).ConfigureAwait(false);
+            _ = TryConfirmCryptoSessionAsync(token);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogDebug("Chat {ChatId}: peer-invite resync canceled", _chat.Id);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Chat {ChatId}: peer-invite resync failed", _chat.Id);
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _inviteResyncGate, 0);
+        }
     }
 
     /// <summary>
@@ -1932,6 +2008,7 @@ public sealed class ChatP2PSession : IAsyncDisposable
         {
             _cryptoProbeOkAwaiter?.TrySetCanceled();
             _cryptoProbeOkAwaiter = null;
+            _outstandingTestSendHash = null;
             CancelFollowerHandshakeWait();
             _handshakeWeInitiated = false;
             _cryptoProbeRoundTripOk = false;
@@ -1939,6 +2016,7 @@ public sealed class ChatP2PSession : IAsyncDisposable
         }
 
         ClearCryptoSession();
+        RefreshHandshakeStatus();
     }
 
     /// <summary>
@@ -2155,8 +2233,9 @@ public sealed class ChatP2PSession : IAsyncDisposable
     }
 
     /// <summary>
-    ///     Инициатор: ACK → ждём OK; без ответа — пауза 5 с ± 2 с (равномерно), сброс крипты, инвайт, handshake, снова.
-    ///     Ответчик на ACK шлёт OK. Не пишется в БД. Один активный цикл на сессию.
+    ///     Leader: send test_send → wait for matching test_response_for_&lt;hash&gt;;
+    ///     on timeout — pause 5 s ± 2 s, reset crypto, invite, handshake, retry.
+    ///     Follower replies to test_send with test_response. Not stored in chat history.
     /// </summary>
     private async Task TryConfirmCryptoSessionAsync(CancellationToken cancellationToken)
     {
@@ -2171,6 +2250,7 @@ public sealed class ChatP2PSession : IAsyncDisposable
             if (!_handshakeWeInitiated)
                 return;
 
+            SetHandshakeStatus(ChatHandshakeStatus.InProgress);
             _logger.LogInformation(
                 "Chat {ChatId}: starting crypto probe round-trip confirmation (role={Role})",
                 _chat.Id, SessionRoleLabel());
@@ -2189,11 +2269,13 @@ public sealed class ChatP2PSession : IAsyncDisposable
                 {
                     var my = _user.NetworkIdShort.Trim();
                     var peer = _chat.PeerNetworkIdShort.Trim();
-                    var ackWire = ChatWireCodec.EncodeText(SessionCryptoProbe.FormatAck(my, peer));
+                    var testWire = ChatWireCodec.EncodeText(
+                        SessionCryptoProbe.FormatTestSend(my, peer, DateTimeOffset.UtcNow, out var sendHash));
 
                     TaskCompletionSource<bool> tcs;
                     lock (_sync)
                     {
+                        _outstandingTestSendHash = sendHash;
                         _cryptoProbeOkAwaiter?.TrySetCanceled();
                         _cryptoProbeOkAwaiter = tcs =
                             new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -2201,17 +2283,22 @@ public sealed class ChatP2PSession : IAsyncDisposable
 
                     try
                     {
-                        _logger.LogDebug("Chat {ChatId}: sending crypto probe ACK", _chat.Id);
-                        await SendEncryptedProbeWireAsync(ackWire, cancellationToken).ConfigureAwait(false);
+                        _logger.LogInformation(
+                            "Chat {ChatId}: sending crypto probe test_send hash={Hash}",
+                            _chat.Id, sendHash);
+                        await SendEncryptedProbeWireAsync(testWire, cancellationToken).ConfigureAwait(false);
                         await tcs.Task.WaitAsync(okWait, cancellationToken).ConfigureAwait(false);
                         _cryptoProbeRoundTripOk = true;
-                        _logger.LogInformation("Chat {ChatId}: crypto probe round-trip confirmed", _chat.Id);
+                        RefreshHandshakeStatus();
+                        _logger.LogInformation(
+                            "Chat {ChatId}: crypto probe round-trip confirmed (test_response for {Hash})",
+                            _chat.Id, sendHash);
                         return;
                     }
                     catch (TimeoutException)
                     {
                         _logger.LogWarning(
-                            "Chat {ChatId}: crypto probe OK not received within {TimeoutSeconds}s",
+                            "Chat {ChatId}: crypto probe test_response not received within {TimeoutSeconds}s",
                             _chat.Id, okWait.TotalSeconds);
                     }
                     catch (OperationCanceledException)
@@ -2229,6 +2316,8 @@ public sealed class ChatP2PSession : IAsyncDisposable
                         {
                             if (ReferenceEquals(_cryptoProbeOkAwaiter, tcs))
                                 _cryptoProbeOkAwaiter = null;
+                            if (string.Equals(_outstandingTestSendHash, sendHash, StringComparison.OrdinalIgnoreCase))
+                                _outstandingTestSendHash = null;
                         }
                     }
                 }
@@ -2245,7 +2334,10 @@ public sealed class ChatP2PSession : IAsyncDisposable
                 try
                 {
                     await ResetCryptoStateAsync(cancellationToken).ConfigureAwait(false);
-                    await SendChatInviteWithRetryAsync(cancellationToken).ConfigureAwait(false);
+                    if (_deliveryPath != ChatDeliveryPath.Server)
+                        await SendChatInviteWithRetryAsync(cancellationToken).ConfigureAwait(false);
+                    else
+                        await TryServerFallbackAsync(cancellationToken).ConfigureAwait(false);
                     await EnsureSessionAsInitiatorAsync(cancellationToken).ConfigureAwait(false);
                 }
                 catch (Exception ex)
@@ -2286,7 +2378,7 @@ public sealed class ChatP2PSession : IAsyncDisposable
         await m.SendBinaryAsync(wire, _peerAddress!, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task SendCryptoProbeOkAsync(CancellationToken cancellationToken)
+    private async Task SendCryptoProbeTestResponseAsync(string testSendHash, CancellationToken cancellationToken)
     {
         try
         {
@@ -2295,51 +2387,75 @@ public sealed class ChatP2PSession : IAsyncDisposable
                 return;
             var my = _user.NetworkIdShort.Trim();
             var peer = _chat.PeerNetworkIdShort.Trim();
-            var wire = ChatWireCodec.EncodeText(SessionCryptoProbe.FormatOk(my, peer));
+            var wire = ChatWireCodec.EncodeText(
+                SessionCryptoProbe.FormatTestResponse(my, peer, testSendHash, DateTimeOffset.UtcNow, out _));
+            _logger.LogInformation(
+                "Chat {ChatId}: sending crypto probe test_response_for_{Hash}",
+                _chat.Id, testSendHash);
             await SendEncryptedProbeWireAsync(wire, cancellationToken).ConfigureAwait(false);
         }
-        catch
+        catch (Exception ex)
         {
-            // ignore
+            _logger.LogWarning(ex, "Chat {ChatId}: crypto probe test_response send failed", _chat.Id);
         }
     }
 
     private bool TryHandleSessionCryptoProbeText(string text, CancellationToken cancellationToken)
     {
-        if (!SessionCryptoProbe.TryParse(text, out var kind, out var src, out var tgt))
+        if (!SessionCryptoProbe.TryParse(text, out var message))
             return false;
         var my = _user.NetworkIdShort.Trim();
         var peer = _chat.PeerNetworkIdShort.Trim();
-        if (!string.Equals(tgt, my, StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(message.TargetNetworkId, my, StringComparison.OrdinalIgnoreCase))
             return false;
-        if (!string.Equals(src, peer, StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(message.SourceNetworkId, peer, StringComparison.OrdinalIgnoreCase))
             return false;
 
         bool weInitiated;
+        string? outstandingHash;
         lock (_sync)
         {
             weInitiated = _handshakeWeInitiated;
+            outstandingHash = _outstandingTestSendHash;
         }
 
-        if (kind == SessionCryptoProbeKind.Ack)
+        if (message.Kind == SessionCryptoProbeKind.TestSend)
         {
             if (weInitiated)
-                return false;
-            _logger.LogInformation("Chat {ChatId}: received crypto probe ACK, sending OK", _chat.Id);
-            _ = SendCryptoProbeOkAsync(cancellationToken);
+                return true; // leader ignores inbound test_send
+            _logger.LogInformation(
+                "Chat {ChatId}: received crypto probe test_send hash={Hash}, sending test_response",
+                _chat.Id, message.ContentHash);
+            _ = SendCryptoProbeTestResponseAsync(message.ContentHash, cancellationToken);
+            // Decrypting a valid test_send proves the follower path; mark confirmed for UI.
+            _cryptoProbeRoundTripOk = true;
+            RefreshHandshakeStatus();
             return true;
         }
 
-        if (kind == SessionCryptoProbeKind.Ok)
+        if (message.Kind == SessionCryptoProbeKind.TestResponse)
         {
             if (!weInitiated)
-                return false;
-            _logger.LogInformation("Chat {ChatId}: received crypto probe OK", _chat.Id);
+                return true;
+            var referenced = message.ReferencedTestSendHash ?? "";
+            if (string.IsNullOrEmpty(outstandingHash) ||
+                !string.Equals(referenced, outstandingHash, StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogWarning(
+                    "Chat {ChatId}: crypto probe test_response hash mismatch (got={Got}, expected={Expected})",
+                    _chat.Id, referenced, outstandingHash ?? "(none)");
+                return true;
+            }
+
+            _logger.LogInformation(
+                "Chat {ChatId}: received matching crypto probe test_response_for_{Hash}",
+                _chat.Id, referenced);
             TaskCompletionSource<bool>? w;
             lock (_sync)
             {
                 w = _cryptoProbeOkAwaiter;
                 _cryptoProbeOkAwaiter = null;
+                _outstandingTestSendHash = null;
             }
 
             w?.TrySetResult(true);
@@ -2863,6 +2979,19 @@ public sealed class ChatP2PSession : IAsyncDisposable
         await ResetCryptoStateAsync(cancellationToken).ConfigureAwait(false);
         // TryServerFallbackAsync pins a hosting server and republishes ChatRequest (server invite).
         var bound = await TryServerFallbackAsync(cancellationToken).ConfigureAwait(false);
+        if (bound)
+        {
+            try
+            {
+                await EnsureSessionAsInitiatorAsync(cancellationToken).ConfigureAwait(false);
+                _ = TryConfirmCryptoSessionAsync(cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogWarning(ex, "Chat {ChatId}: server-path session renegotiation failed", _chat.Id);
+            }
+        }
+
         await EnqueueLatestUnsentMessagesAsync(cancellationToken).ConfigureAwait(false);
         if (!bound)
             throw new InvalidOperationException("Абонент не найден на доступных messenger-серверах.");

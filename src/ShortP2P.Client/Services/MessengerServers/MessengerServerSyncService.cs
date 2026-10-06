@@ -1311,6 +1311,14 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
                 // Open UI only for a genuine new chat — not duplicate/failover re-delivery.
                 await _chats.NotifyIncomingChatInviteAsync(chat.Id, cancellationToken).ConfigureAwait(false);
             }
+            else if (_sessions.IsStarted(chat.Id) && _sessions.TryGetSession(chat.Id, out var session))
+            {
+                _logger.LogInformation(
+                    "Server ChatRequest from {PeerId}: resyncing started session for chat {ChatId}",
+                    peerId,
+                    chat.Id);
+                await session.HandlePeerInviteResyncAsync(cancellationToken).ConfigureAwait(false);
+            }
         }
     }
 
