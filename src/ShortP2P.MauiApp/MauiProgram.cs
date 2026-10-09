@@ -9,6 +9,7 @@ using ShortP2P.Crypto;
 using ShortP2P.Client.Bluetooth;
 using ShortP2P.Client.ChatMedia;
 using ShortP2P.Client.Data;
+using ShortP2P.Client.ProfileBackup;
 using ShortP2P.Client.Routing;
 using ShortP2P.Client.Services;
 using ShortP2P.Client.Services.MessengerServers;
@@ -73,6 +74,7 @@ public static class MauiProgram
         builder.Services.AddSingleton<ChatSessionCache>();
         builder.Services.AddSingleton<P2pCryptoSessionCache>();
         builder.Services.AddSingleton<IMessengerServerRepository, SqliteMessengerServerRepository>();
+        builder.Services.AddSingleton<ProfileBackupService>();
         builder.Services.AddSingleton<DeviceIdProvider>();
         builder.Services.AddSingleton<MessengerServerManager>();
         builder.Services.AddSingleton<MessengerServerSyncService>();

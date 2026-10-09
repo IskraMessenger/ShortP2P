@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using ShortP2P.Auth;
+using ShortP2P.Client.ProfileBackup;
 using ShortP2P.Client.Services;
 
 namespace ShortP2P.MauiApp;
@@ -42,6 +43,16 @@ public partial class LoginPage : ContentPage
     {
         var page = MauiProgram.Services.GetRequiredService<RegisterPage>();
         await Navigation.PushAsync(page).ConfigureAwait(true);
+    }
+
+    private async void OnImportProfileClicked(object? sender, EventArgs e)
+    {
+        var backup = MauiProgram.Services.GetRequiredService<ProfileBackupService>();
+        if (!await ProfileFileShare.ImportProfileAsync(this, _auth, backup, _logger).ConfigureAwait(true))
+            return;
+
+        // Same path as a password login: starts UserP2pRuntime (LAN + messenger servers).
+        await GoToChatsAsync().ConfigureAwait(true);
     }
 
     private async Task GoToChatsAsync()

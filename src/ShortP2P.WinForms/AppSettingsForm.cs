@@ -1,4 +1,6 @@
 using Microsoft.Extensions.Logging;
+using ShortP2P.Auth;
+using ShortP2P.Client.ProfileBackup;
 using ShortP2P.Client.Routing;
 using ShortP2P.Client.Services;
 using ShortP2P.Discovery;
@@ -14,8 +16,11 @@ public sealed class AppSettingsForm : Form
     };
 
     private readonly Button _cancelButton = new() { Text = "Отмена", AutoSize = true };
+    private readonly Button _exportProfileButton = new() { Text = "Экспорт профиля (.tlp)…", AutoSize = true };
     private readonly Button _refreshAudioSourcesButton = new() { Text = "Обновить список", AutoSize = true };
     private readonly Button _refreshVideoSourcesButton = new() { Text = "Обновить список", AutoSize = true };
+    private readonly AuthService _auth;
+    private readonly ProfileBackupService _backup;
     private readonly P2pRoutingSettingsStore _routingStore;
     private readonly UserP2pRuntime _runtime;
     private readonly Button _saveButton = new() { Text = "Сохранить", AutoSize = true };
@@ -35,10 +40,13 @@ public sealed class AppSettingsForm : Form
         Width = 440
     };
 
-    public AppSettingsForm(AppSettingsStore settings, P2pRoutingSettingsStore routingStore, UserP2pRuntime runtime,
+    public AppSettingsForm(AppSettingsStore settings, AuthService auth, ProfileBackupService backup,
+        P2pRoutingSettingsStore routingStore, UserP2pRuntime runtime,
         ILogger<UserAction> userActions)
     {
         _settings = settings;
+        _auth = auth;
+        _backup = backup;
         _routingStore = routingStore;
         _runtime = runtime;
         _userActions = userActions;
@@ -173,6 +181,7 @@ public sealed class AppSettingsForm : Form
         };
         bottomButtons.Controls.Add(_cancelButton);
         bottomButtons.Controls.Add(_saveButton);
+        bottomButtons.Controls.Add(_exportProfileButton);
 
         Controls.Add(tabs);
         Controls.Add(bottomButtons);
@@ -181,6 +190,8 @@ public sealed class AppSettingsForm : Form
         _refreshVideoSourcesButton.Click += async (_, _) => await ReloadVideoInputsAsync(true).ConfigureAwait(true);
         _cancelButton.Click += (_, _) => Close();
         _saveButton.Click += async (_, _) => await SaveAndCloseAsync().ConfigureAwait(true);
+        _exportProfileButton.Click += async (_, _) =>
+            await ProfileFileShare.ExportProfileAsync(this, _auth, _backup, _userActions).ConfigureAwait(true);
         Shown += async (_, _) => await OnShownAsync().ConfigureAwait(true);
     }
 

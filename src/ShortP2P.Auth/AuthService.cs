@@ -52,6 +52,16 @@ public sealed class AuthService(IUserAuthRepository users, ISessionStorage sessi
         if (user == null || !PasswordHasher.Verify(password, user.PasswordSaltBase64, user.PasswordHashBase64))
             return (false, "Invalid nickname or password.");
 
+        // Transparent upgrade of legacy login salts (e.g. 16 → 32 bytes). Master-password
+        // KDF salt for .tlp export is unrelated and never stored on the user row.
+        if (PasswordHasher.GetSaltLength(user.PasswordSaltBase64) != PasswordHasher.SaltSize)
+        {
+            var (salt, hash) = PasswordHasher.Hash(password);
+            user.PasswordSaltBase64 = salt;
+            user.PasswordHashBase64 = hash;
+            await _users.UpdateUserAsync(user).ConfigureAwait(false);
+        }
+
         await PersistSessionAsync(user.Id).ConfigureAwait(false);
         CurrentUser = user;
         return (true, null);
@@ -62,6 +72,18 @@ public sealed class AuthService(IUserAuthRepository users, ISessionStorage sessi
         CurrentUser = null;
         _sessionStorage.Remove(SessionUserIdKey);
         await Task.CompletedTask.ConfigureAwait(false);
+    }
+
+    /// <summary>
+    ///     Подписывает локально восстановленного пользователя (TRL-10 импорт профиля из .tlp)
+    ///     без проверки пароля — файл уже расшифрован мастер-паролем.
+    /// </summary>
+    public async Task AdoptRestoredUserAsync(UserEntity user)
+    {
+        if (user == null)
+            throw new global::System.ArgumentNullException(nameof(user));
+        await PersistSessionAsync(user.Id).ConfigureAwait(false);
+        CurrentUser = user;
     }
 
     public async Task<bool> TryRestoreSessionAsync()

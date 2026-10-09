@@ -10,6 +10,7 @@ using ShortP2P.Client;
 using ShortP2P.Client.Bluetooth;
 using ShortP2P.Client.ChatMedia;
 using ShortP2P.Client.Data;
+using ShortP2P.Client.ProfileBackup;
 using ShortP2P.Client.Routing;
 using ShortP2P.Client.Services;
 using ShortP2P.Client.Services.MessengerServers;
@@ -65,6 +66,7 @@ internal static class Program
         services.AddSingleton<ChatSessionCache>();
         services.AddSingleton<P2pCryptoSessionCache>();
         services.AddSingleton<IMessengerServerRepository, SqliteMessengerServerRepository>();
+        services.AddSingleton<ProfileBackupService>();
         services.AddSingleton<DeviceIdProvider>();
         services.AddSingleton<MessengerServerManager>();
         services.AddSingleton<MessengerServerSyncService>();

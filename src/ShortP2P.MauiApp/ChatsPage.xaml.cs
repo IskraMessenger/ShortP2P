@@ -6,6 +6,7 @@ using ShortP2P.Auth.Data;
 using ShortP2P.Client;
 using ShortP2P.Client.Bluetooth;
 using ShortP2P.Client.Data;
+using ShortP2P.Client.ProfileBackup;
 using ShortP2P.Client.Services;
 using ShortP2P.Client.Services.MessengerServers;
 using ShortP2P.Crypto;
@@ -358,6 +359,12 @@ public partial class ChatsPage : ContentPage
         var text = $"Network id: {u.NetworkIdShort}\nPublic key JSON:\n{pub}";
         await Clipboard.Default.SetTextAsync(text).ConfigureAwait(true);
         await DisplayAlert("Copied", "Network id and public key JSON copied to clipboard.", "OK").ConfigureAwait(true);
+    }
+
+    private async void OnExportProfileClicked(object? sender, EventArgs e)
+    {
+        var backup = MauiProgram.Services.GetRequiredService<ProfileBackupService>();
+        await ProfileFileShare.ExportProfileAsync(this, _auth, backup, _logger).ConfigureAwait(true);
     }
 
     private async void OnChatSwipeDelete(object? sender, EventArgs e)

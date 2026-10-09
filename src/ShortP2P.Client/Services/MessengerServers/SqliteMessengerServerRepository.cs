@@ -18,6 +18,8 @@ public interface IMessengerServerRepository
     Task UpdateAsync(MessengerServerEntity entity, CancellationToken cancellationToken = default);
 
     Task DeleteAsync(int id, CancellationToken cancellationToken = default);
+
+    Task DeleteAllByUserAsync(int userId, CancellationToken cancellationToken = default);
 }
 
 public sealed class SqliteMessengerServerRepository(AppDatabase appDatabase) : IMessengerServerRepository
@@ -107,6 +109,16 @@ public sealed class SqliteMessengerServerRepository(AppDatabase appDatabase) : I
         {
             cancellationToken.ThrowIfCancellationRequested();
             await conn.DeleteAsync<MessengerServerEntity>(id).ConfigureAwait(false);
+        }).ConfigureAwait(false);
+    }
+
+    public async Task DeleteAllByUserAsync(int userId, CancellationToken cancellationToken = default)
+    {
+        await _db.WriteAsync(async conn =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await conn.ExecuteAsync("DELETE FROM messenger_servers WHERE UserId = ?", userId)
+                .ConfigureAwait(false);
         }).ConfigureAwait(false);
     }
 

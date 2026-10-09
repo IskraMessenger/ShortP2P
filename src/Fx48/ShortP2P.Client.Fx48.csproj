@@ -58,6 +58,7 @@
     <Compile Include="..\ShortP2P.Client\Services\PeerKeySource.cs" />
     <Compile Include="..\ShortP2P.Client\Services\LanChatStartFromDiscovery.cs" />
     <Compile Include="..\ShortP2P.Client\Services\MessengerServers\*.cs" />
+    <Compile Include="..\ShortP2P.Client\ProfileBackup\*.cs" />
     <Compile Include="..\ShortP2P.Discovery\PeerIdentity.cs" />
     <Compile Include="..\ShortP2P.Discovery\UdpPeerDiscoveryOptions.cs" />
     <Compile Include="..\ShortP2P.Discovery\IBluetoothPresencePingTargetsProvider.cs" />
@@ -79,6 +80,7 @@
     <Compile Include="Compat\ChannelReaderFx.cs" />
     <Compile Include="Stubs\ChatP2PSession.cs" />
     <Compile Include="Compat\AesGcm.cs" />
+    <Compile Include="Compat\ChaCha20Poly1305.cs" />
     <Compile Include="Compat\CryptographicOperations.cs" />
     <Compile Include="Compat\CancellationTokenSourceExtensions.cs" />
     <Compile Include="Compat\ParallelFx.cs" />
@@ -93,6 +95,9 @@
     <PackageReference Include="ZXing.Net" Version="0.16.11" />
     <PackageReference Include="ZXing.Net.Bindings.ImageSharp" Version="0.16.16" />
     <PackageReference Include="BouncyCastle.Cryptography" Version="2.5.1" />
+    <!-- System.Formats.Cbor 10 requires Bcl.HashCode >= 6.0.0 (Fx48 props pin 1.1.1) -->
+    <PackageReference Update="Microsoft.Bcl.HashCode" Version="6.0.0" />
+    <PackageReference Include="System.Formats.Cbor" Version="10.0.0" />
     <PackageReference Include="System.Threading.Channels" Version="8.0.0" />
     <Reference Include="System.ComponentModel.DataAnnotations" />
   </ItemGroup>

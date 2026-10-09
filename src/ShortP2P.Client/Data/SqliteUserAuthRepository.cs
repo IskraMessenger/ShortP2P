@@ -24,6 +24,20 @@ public sealed class SqliteUserAuthRepository(AppDatabase appDatabase) : IUserAut
         }).ConfigureAwait(false);
     }
 
+    public async Task<UserEntity?> FindByNetworkIdShortAsync(
+        string networkIdShort,
+        CancellationToken cancellationToken = default)
+    {
+        var id = networkIdShort?.Trim() ?? "";
+        return await _db.ReadAsync(async conn =>
+        {
+            return await conn.Table<UserEntity>()
+                .Where(u => u.NetworkIdShort == id)
+                .FirstOrDefaultAsync()
+                .ConfigureAwait(false);
+        }).ConfigureAwait(false);
+    }
+
     public async Task InsertUserAsync(UserEntity user, CancellationToken cancellationToken = default)
     {
         await _db.WriteAsync(async conn =>

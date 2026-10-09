@@ -12,6 +12,7 @@
             <Entry x:Name="PasswordEntry" Placeholder="Password" IsPassword="True" />
             <Button Text="Login" Clicked="OnLoginClicked" />
             <Button Text="Create account" Clicked="OnRegisterNavigateClicked" />
+            <Button Text="Import profile (.tlp)…" Clicked="OnImportProfileClicked" />
         </VerticalStackLayout>
     </ScrollView>
 </ContentPage>

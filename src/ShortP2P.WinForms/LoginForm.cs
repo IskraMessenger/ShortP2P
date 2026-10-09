@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using ShortP2P.Auth;
+using ShortP2P.Client.ProfileBackup;
 
 namespace ShortP2P.WinForms;
 
@@ -10,6 +11,7 @@ public sealed class LoginForm : Form
     private readonly Button _btnCancel = new() { Text = "Exit", DialogResult = DialogResult.Cancel };
     private readonly Button _btnLogin = new() { Text = "Login", DialogResult = DialogResult.None };
     private readonly Button _btnRegister = new() { Text = "Register" };
+    private readonly Button _btnImport = new() { Text = "Импорт профиля…" };
     private readonly ILogger<LoginForm> _logger;
     private readonly TextBox _nick = new() { PlaceholderText = "Nickname" };
     private readonly TextBox _pass = new() { PlaceholderText = "Password", UseSystemPasswordChar = true };
@@ -51,6 +53,7 @@ public sealed class LoginForm : Form
             { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = false };
         buttons.Controls.Add(_btnLogin);
         buttons.Controls.Add(_btnRegister);
+        buttons.Controls.Add(_btnImport);
         buttons.Controls.Add(_btnCancel);
         layout.Controls.Add(buttons, 0, 2);
         Controls.Add(layout);
@@ -70,6 +73,7 @@ public sealed class LoginForm : Form
 
         _btnLogin.Click += async (_, _) => await OnLoginAsync().ConfigureAwait(true);
         _btnRegister.Click += OnRegisterClicked;
+        _btnImport.Click += async (_, _) => await OnImportAsync().ConfigureAwait(true);
         Load += async (_, _) => await TryRestoreAsync().ConfigureAwait(true);
         FormClosing += (_, e) =>
         {
@@ -112,6 +116,19 @@ public sealed class LoginForm : Form
         using var reg = _services.GetRequiredService<RegisterForm>();
         if (reg.ShowDialog(this) != DialogResult.OK)
             return;
+        DialogResult = DialogResult.OK;
+        Close();
+    }
+
+    private async Task OnImportAsync()
+    {
+        _userActions.LogInformation("Login: import profile from .tlp");
+        var backup = _services.GetRequiredService<ProfileBackupService>();
+        if (!await ProfileFileShare.ImportProfileAsync(this, _auth, backup, _logger).ConfigureAwait(true))
+            return;
+
+        // DialogResult.OK lets Program.cs open MainChatsForm, which starts UserP2pRuntime
+        // (LAN + MessengerServerSyncService) for the restored user — same as a password login.
         DialogResult = DialogResult.OK;
         Close();
     }
