@@ -31,8 +31,8 @@ public sealed class ChatMediaOptions
     /// <summary>Документ вне суперэкономии: 20 МБ.</summary>
     public const int DefaultMaxDocumentBytes = 20 * 1024 * 1024;
 
-    /// <summary>Видео вне суперэкономии: 30 МБ.</summary>
-    public const int DefaultMaxVideoBytes = 30 * 1024 * 1024;
+    /// <summary>Видео вне суперэкономии: 60 МБ.</summary>
+    public const int DefaultMaxVideoBytes = 60 * 1024 * 1024;
 
     /// <summary>Голос вне суперэкономии: 1 МБ = 1 * 1024 * 1024.</summary>
     public const int DefaultMaxVoiceBytes = 1 * 1024 * 1024;

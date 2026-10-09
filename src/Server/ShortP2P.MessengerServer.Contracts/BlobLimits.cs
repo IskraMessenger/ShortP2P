@@ -3,8 +3,8 @@ namespace ShortP2P.MessengerServer.Contracts;
 /// <summary>Limits and headers for opaque encrypted attachment blobs.</summary>
 public static class BlobLimits
 {
-    /// <summary>Max ciphertext size: 30 MB video plus 2 MB hybrid-envelope headroom.</summary>
-    public const int MaxCiphertextBytes = 30 * 1024 * 1024 + 2 * 1024 * 1024;
+    /// <summary>Max ciphertext size: 60 MB video plus 2 MB hybrid-envelope headroom.</summary>
+    public const int MaxCiphertextBytes = 60 * 1024 * 1024 + 2 * 1024 * 1024;
 
     public const string TargetNetworkIdHeader = "X-ShortP2P-Target-NetworkId";
 

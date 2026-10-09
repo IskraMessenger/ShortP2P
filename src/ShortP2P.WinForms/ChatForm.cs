@@ -265,7 +265,7 @@ public sealed class ChatForm : Form
         RefreshVoiceRecordTooltip();
         _buttonTooltips.SetToolTip(_attachImage, "Отправить изображение");
         _buttonTooltips.SetToolTip(_attachVideo,
-            "Отправить видео OGV (обычный: 320x240, экономия: 160x120, до 60 сек)");
+            $"Отправить видео OGV (обычный: 320x240, экономия: 160x120, до {VideoAttachHelper.MaxDurationSeconds} сек)");
         _buttonTooltips.SetToolTip(_attachCamera, "Записать видеосообщение с камеры");
         _buttonTooltips.SetToolTip(_attachDocument, "Отправить документ");
         _buttonTooltips.SetToolTip(_send, "Отправить сообщение");
@@ -612,7 +612,7 @@ public sealed class ChatForm : Form
     private static string BuildOgvDialogTitle(TrafficQualityMode mode)
     {
         var (w, h) = mode.GetVideoResolution();
-        return $"Видео OGV ({w}x{h}, до 60 секунд)";
+        return $"Видео OGV ({w}x{h}, до {VideoAttachHelper.MaxDurationSeconds} секунд)";
     }
 
     private async Task OnAttachCameraAsync()

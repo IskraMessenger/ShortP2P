@@ -16,7 +16,7 @@ public class ChatMediaLimitsTests
         Assert.Equal(10 * 60, ChatMediaOptions.MaxVoiceSeconds);
         Assert.Equal(10 * 1024 * 1024, ChatMediaOptions.DefaultMaxImageBytes);
         Assert.Equal(20 * 1024 * 1024, ChatMediaOptions.DefaultMaxDocumentBytes);
-        Assert.Equal(30 * 1024 * 1024, ChatMediaOptions.DefaultMaxVideoBytes);
+        Assert.Equal(60 * 1024 * 1024, ChatMediaOptions.DefaultMaxVideoBytes);
         Assert.Equal(1 * 1024 * 1024, ChatMediaOptions.DefaultMaxVoiceBytes);
     }
 
@@ -36,7 +36,7 @@ public class ChatMediaLimitsTests
         Assert.Equal("1 МБ", ChatMediaOptions.FormatByteLimit(options.GetMaxVoiceBytes(mode)));
         Assert.Equal("10 МБ", ChatMediaOptions.FormatByteLimit(options.GetMaxImageBytes(mode)));
         Assert.Equal("20 МБ", ChatMediaOptions.FormatByteLimit(options.GetMaxDocumentBytes(mode)));
-        Assert.Equal("30 МБ", ChatMediaOptions.FormatByteLimit(options.GetMaxVideoBytes(mode)));
+        Assert.Equal("60 МБ", ChatMediaOptions.FormatByteLimit(options.GetMaxVideoBytes(mode)));
 
         options.ValidateSize(options.GetMaxImageBytes(mode), mode);
         options.ValidateDocumentSize(options.GetMaxDocumentBytes(mode), mode);
