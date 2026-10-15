@@ -91,9 +91,10 @@
     <PackageReference Include="SQLitePCLRaw.bundle_green" Version="2.1.11" />
     <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="2.1.13" />
     <PackageReference Include="QRCoder" Version="1.6.0" />
-    <PackageReference Include="SixLabors.ImageSharp" Version="2.1.11" />
+    <!-- net472 cannot use ImageSharp 3. The unversioned ImageSharp binding calls Image.GetPixelRowSpan, which exists on ImageSharp 1.x only. -->
+    <PackageReference Include="SixLabors.ImageSharp" Version="2.1.13" />
     <PackageReference Include="ZXing.Net" Version="0.16.11" />
-    <PackageReference Include="ZXing.Net.Bindings.ImageSharp" Version="0.16.16" />
+    <PackageReference Include="ZXing.Net.Bindings.ImageSharp.V2" Version="0.16.20" />
     <PackageReference Include="BouncyCastle.Cryptography" Version="2.5.1" />
     <!-- System.Formats.Cbor 10 requires Bcl.HashCode >= 6.0.0 (Fx48 props pin 1.1.1) -->
     <PackageReference Update="Microsoft.Bcl.HashCode" Version="6.0.0" />
