@@ -41,10 +41,16 @@ builder.Services.AddServerCertificateReader();
 builder.Services.AddMessengerUseCases();
 builder.Services.AddMessengerSwagger();
 builder.Services.AddScoped<PresenceTouchFilter>();
+builder.Services.AddSingleton<JsonBodyContentTypeFilter>();
 builder.Services.AddControllers(options =>
 {
     options.Filters.AddService<PresenceTouchFilter>();
-}).AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
+    options.Filters.AddService<JsonBodyContentTypeFilter>();
+}).AddJsonOptions(o =>
+{
+    // System.Text.Json only — no Newtonsoft type-name handling / payload type execution.
+    o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+});
 
 var app = builder.Build();
 

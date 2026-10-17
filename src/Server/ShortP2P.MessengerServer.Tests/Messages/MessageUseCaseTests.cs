@@ -34,7 +34,7 @@ public class SendMessageUseCaseTests
         var message = TestHarness.NewMessage("m1", "alice", "bob");
         await h.SendMessage().ExecuteAsync(new SendMessageCommand(message));
         await h.SendMessage().ExecuteAsync(new SendMessageCommand(
-            TestHarness.NewMessage("m1", "alice", "bob", ciphertext: "other")));
+            TestHarness.NewMessage("m1", "alice", "bob", ciphertext: "b3RoZXI=")));
 
         Assert.Equal("Y2lwaGVy", h.Stores.Messages["m1"].EncryptedDataBase64);
     }

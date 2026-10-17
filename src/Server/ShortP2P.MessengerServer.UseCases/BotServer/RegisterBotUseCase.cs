@@ -20,38 +20,16 @@ public sealed class RegisterBotUseCase(
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(command.NetworkId)
-                || string.IsNullOrWhiteSpace(command.BotName)
-                || string.IsNullOrWhiteSpace(command.BotReadableName)
-                || string.IsNullOrWhiteSpace(command.BotDescription))
-            {
-                throw UseCaseException.Validation(
-                    "NetworkId, botName, botReadableName and botDescription are required.");
-            }
-
-            var networkId = command.NetworkId.Trim();
-            var botName = command.BotName.Trim();
-            var botReadableName = command.BotReadableName.Trim();
-            var botDescription = command.BotDescription.Trim();
+            var networkId = InputGuard.NetworkId(command.NetworkId);
+            var botName = InputGuard.Cleartext(command.BotName, BotLimits.MaxBotNameLength, "botName");
+            var botReadableName = InputGuard.Cleartext(
+                command.BotReadableName, BotLimits.MaxBotReadableNameLength, "botReadableName");
+            var botDescription = InputGuard.Cleartext(
+                command.BotDescription, BotLimits.MaxBotDescriptionLength, "botDescription");
 
             await blacklistGuard
                 .EnsureAllowedAsync(networkId, BotAccessOperations.Register, cancellationToken)
                 .ConfigureAwait(false);
-
-            if (botName.Length > BotLimits.MaxBotNameLength)
-                throw UseCaseException.Validation($"botName must be at most {BotLimits.MaxBotNameLength} characters.");
-
-            if (botReadableName.Length > BotLimits.MaxBotReadableNameLength)
-            {
-                throw UseCaseException.Validation(
-                    $"botReadableName must be at most {BotLimits.MaxBotReadableNameLength} characters.");
-            }
-
-            if (botDescription.Length > BotLimits.MaxBotDescriptionLength)
-            {
-                throw UseCaseException.Validation(
-                    $"botDescription must be at most {BotLimits.MaxBotDescriptionLength} characters.");
-            }
 
             if (await accounts.FindByNetworkIdAsync(networkId, cancellationToken).ConfigureAwait(false) is not null)
                 throw UseCaseException.Conflict("NetworkId is already registered.");

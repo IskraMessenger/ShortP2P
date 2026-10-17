@@ -1,3 +1,5 @@
+using ShortP2P.MessengerServer.Contracts;
+using ShortP2P.MessengerServer.Domain;
 using ShortP2P.MessengerServer.UseCases.Abstractions;
 using ShortP2P.MessengerServer.UseCases.Inbox;
 
@@ -12,16 +14,18 @@ public sealed class SendMessageUseCase(
 {
     public async Task ExecuteAsync(SendMessageCommand command, CancellationToken cancellationToken = default)
     {
-        var message = command.Message ?? throw UseCaseException.Validation("Message is required.");
+        var raw = command.Message ?? throw UseCaseException.Validation("Message is required.");
 
-        if (string.IsNullOrWhiteSpace(message.MessageId) ||
-            string.IsNullOrWhiteSpace(message.SrcNetworkId) ||
-            string.IsNullOrWhiteSpace(message.TgtNetworkId) ||
-            string.IsNullOrWhiteSpace(message.EncryptedDataBase64))
+        var message = new Message
         {
-            throw UseCaseException.Validation(
-                "MessageId, srcNetworkId, tgtNetworkId and encryptedDataBase64 are required.");
-        }
+            MessageId = InputGuard.MessageId(raw.MessageId),
+            SrcNetworkId = InputGuard.NetworkId(raw.SrcNetworkId, "srcNetworkId"),
+            TgtNetworkId = InputGuard.NetworkId(raw.TgtNetworkId, "tgtNetworkId"),
+            CreatedUtc = raw.CreatedUtc,
+            UpdatedUtc = raw.UpdatedUtc,
+            EncryptedDataBase64 = InputGuard.CiphertextBase64(
+                raw.EncryptedDataBase64, MessageLimits.MaxCiphertextBytes, "encryptedDataBase64")
+        };
 
         StorageAccess.EnsureAnyStoreEnabled(options);
 
