@@ -19,9 +19,8 @@ public sealed class OsHostHardwareInfoProvider : IHostHardwareInfoProvider
 
             if (OperatingSystem.IsWindows())
             {
-                mhz = TryReadWindowsMaxMhz() ?? 0;
+                TryReadWindowsCpuInfo(out mhz, out cpuBrand);
                 ramMb = TryReadWindowsTotalRamMb() ?? 0;
-                cpuBrand = TryReadWindowsCpuBrand();
             }
             else if (OperatingSystem.IsLinux())
             {
@@ -52,51 +51,46 @@ public sealed class OsHostHardwareInfoProvider : IHostHardwareInfoProvider
         }
     }
 
-    private static string? NormalizeCpuBrand(string? cpuBrand)
-    {
-        if (!string.IsNullOrWhiteSpace(cpuBrand))
-            return cpuBrand.Trim();
+    private static string? NormalizeCpuBrand(string? cpuBrand) =>
+        !string.IsNullOrWhiteSpace(cpuBrand)
+            ? cpuBrand.Trim()
+            // When brand string is missing, still allow Auto mapping for ARM hosts.
+            : RuntimeInformation.OSArchitecture is Architecture.Arm64 or Architecture.Arm
+                ? "aarch64"
+                : null;
 
-        // When brand string is missing, still allow Auto mapping for ARM hosts.
-        if (RuntimeInformation.OSArchitecture is Architecture.Arm64 or Architecture.Arm)
-            return "aarch64";
-
-        return null;
-    }
-
+    /// <summary>
+    /// Reads clock and friendly CPU name from the existing CentralProcessor key in one open
+    /// (same source already used for TotalPower MHz). Prefer this over WMI / System.Management.
+    /// Falls back to PROCESSOR_IDENTIFIER when ProcessorNameString is absent.
+    /// </summary>
     [SupportedOSPlatform("windows")]
-    private static double? TryReadWindowsMaxMhz()
+    private static void TryReadWindowsCpuInfo(out double mhz, out string? cpuBrand)
     {
+        mhz = 0;
+        cpuBrand = null;
         try
         {
             using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(
                 @"HARDWARE\DESCRIPTION\System\CentralProcessor\0");
-            var value = key?.GetValue("~MHz");
-            return value switch
+            if (key is null)
+            {
+                cpuBrand = Environment.GetEnvironmentVariable("PROCESSOR_IDENTIFIER");
+                return;
+            }
+
+            mhz = key.GetValue("~MHz") switch
             {
                 int i => i,
                 long l => l,
-                _ => null
+                _ => 0
             };
+            cpuBrand = key.GetValue("ProcessorNameString") as string
+                       ?? Environment.GetEnvironmentVariable("PROCESSOR_IDENTIFIER");
         }
         catch
         {
-            return null;
-        }
-    }
-
-    [SupportedOSPlatform("windows")]
-    private static string? TryReadWindowsCpuBrand()
-    {
-        try
-        {
-            using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(
-                @"HARDWARE\DESCRIPTION\System\CentralProcessor\0");
-            return key?.GetValue("ProcessorNameString") as string;
-        }
-        catch
-        {
-            return null;
+            cpuBrand = Environment.GetEnvironmentVariable("PROCESSOR_IDENTIFIER");
         }
     }
 
