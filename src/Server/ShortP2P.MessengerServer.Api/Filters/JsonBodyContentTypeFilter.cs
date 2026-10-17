@@ -23,7 +23,7 @@ public sealed class JsonBodyContentTypeFilter : IResourceFilter
         if (path.Contains("/blobs", StringComparison.OrdinalIgnoreCase))
             return;
 
-        if (!request.ContentLength.HasValue || request.ContentLength.Value == 0)
+        if (!HasRequestBody(request))
             return;
 
         var contentType = request.ContentType;
@@ -46,5 +46,20 @@ public sealed class JsonBodyContentTypeFilter : IResourceFilter
 
     public void OnResourceExecuted(ResourceExecutedContext context)
     {
+    }
+
+    /// <summary>
+    /// True when the request carries a body, including chunked Transfer-Encoding without Content-Length.
+    /// </summary>
+    internal static bool HasRequestBody(HttpRequest request)
+    {
+        if (request.ContentLength is > 0)
+            return true;
+        if (request.ContentLength is 0)
+            return false;
+
+        // Content-Length absent: still enforce Content-Type for chunked / encoded bodies.
+        var transferEncoding = request.Headers.TransferEncoding.ToString();
+        return !string.IsNullOrWhiteSpace(transferEncoding);
     }
 }

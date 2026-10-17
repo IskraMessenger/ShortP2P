@@ -1,4 +1,3 @@
-using ShortP2P.MessengerServer.Contracts;
 using ShortP2P.MessengerServer.Domain;
 
 namespace ShortP2P.MessengerServer.UseCases;
@@ -44,11 +43,8 @@ public static class InputGuard
             return null;
 
         var trimmed = value.Trim();
-        if (!OpaqueIdRules.IsValid(trimmed, OpaqueIdRules.MaxCorrelationIdLength)
-            || trimmed.Length > BotLimits.MaxCorrelationIdLength)
-        {
+        if (!OpaqueIdRules.IsValid(trimmed, OpaqueIdRules.MaxCorrelationIdLength))
             throw UseCaseException.Validation("correlationId is invalid.");
-        }
 
         return trimmed;
     }

@@ -24,6 +24,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\ShortP2P.MessengerServer.Api\ShortP2P.MessengerServer.Api.csproj" />
     <ProjectReference Include="..\ShortP2P.MessengerServer.Auth\ShortP2P.MessengerServer.Auth.csproj" />
     <ProjectReference Include="..\ShortP2P.MessengerServer.Domain\ShortP2P.MessengerServer.Domain.csproj" />
     <ProjectReference Include="..\ShortP2P.MessengerServer.Infrastructure\ShortP2P.MessengerServer.Infrastructure.csproj" />

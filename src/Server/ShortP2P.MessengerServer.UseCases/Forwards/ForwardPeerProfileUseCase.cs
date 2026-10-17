@@ -1,6 +1,5 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using ShortP2P.MessengerServer.Contracts;
 using ShortP2P.MessengerServer.Domain;
 using ShortP2P.MessengerServer.UseCases.Abstractions;
 
@@ -22,7 +21,7 @@ public sealed class ForwardPeerProfileUseCase(
         var src = InputGuard.NetworkId(command.SrcNetworkId, "srcNetworkId");
         var tgt = InputGuard.NetworkId(command.TgtNetworkId, "tgtNetworkId");
         var payloadB64 = InputGuard.CiphertextBase64(
-            command.PayloadBase64, BlobLimits.MaxCiphertextBytes, "payloadBase64");
+            command.PayloadBase64, ForwardPayloadLimits.MaxReplyLength, "payloadBase64");
         var serverOrigin = string.IsNullOrWhiteSpace(command.ServerOrigin)
             ? "?"
             : CleartextFieldRules.Sanitize(command.ServerOrigin, 256);
