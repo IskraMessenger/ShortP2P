@@ -15,21 +15,25 @@ public sealed class OsHostHardwareInfoProvider : IHostHardwareInfoProvider
             var cores = Math.Max(1, Environment.ProcessorCount);
             double mhz;
             double ramMb;
+            string? cpuBrand;
 
             if (OperatingSystem.IsWindows())
             {
                 mhz = TryReadWindowsMaxMhz() ?? 0;
                 ramMb = TryReadWindowsTotalRamMb() ?? 0;
+                cpuBrand = TryReadWindowsCpuBrand();
             }
             else if (OperatingSystem.IsLinux())
             {
                 mhz = TryReadLinuxMaxMhz() ?? 0;
                 ramMb = TryReadLinuxTotalRamMb() ?? 0;
+                cpuBrand = TryReadLinuxCpuBrand();
             }
             else if (OperatingSystem.IsMacOS())
             {
                 mhz = MacOsHostMetrics.TryReadMaxClockMhz() ?? 0;
                 ramMb = MacOsHostMetrics.TryReadTotalRamMb() ?? 0;
+                cpuBrand = MacOsHostMetrics.TryReadCpuBrandString();
             }
             else
             {
@@ -39,12 +43,25 @@ public sealed class OsHostHardwareInfoProvider : IHostHardwareInfoProvider
             if (mhz <= 0 || ramMb <= 0)
                 return Task.FromResult<HostHardwareInfo?>(null);
 
-            return Task.FromResult<HostHardwareInfo?>(new HostHardwareInfo(mhz, cores, ramMb));
+            cpuBrand = NormalizeCpuBrand(cpuBrand);
+            return Task.FromResult<HostHardwareInfo?>(new HostHardwareInfo(mhz, cores, ramMb, cpuBrand));
         }
         catch
         {
             return Task.FromResult<HostHardwareInfo?>(null);
         }
+    }
+
+    private static string? NormalizeCpuBrand(string? cpuBrand)
+    {
+        if (!string.IsNullOrWhiteSpace(cpuBrand))
+            return cpuBrand.Trim();
+
+        // When brand string is missing, still allow Auto mapping for ARM hosts.
+        if (RuntimeInformation.OSArchitecture is Architecture.Arm64 or Architecture.Arm)
+            return "aarch64";
+
+        return null;
     }
 
     [SupportedOSPlatform("windows")]
@@ -61,6 +78,21 @@ public sealed class OsHostHardwareInfoProvider : IHostHardwareInfoProvider
                 long l => l,
                 _ => null
             };
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static string? TryReadWindowsCpuBrand()
+    {
+        try
+        {
+            using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(
+                @"HARDWARE\DESCRIPTION\System\CentralProcessor\0");
+            return key?.GetValue("ProcessorNameString") as string;
         }
         catch
         {
@@ -111,6 +143,48 @@ public sealed class OsHostHardwareInfoProvider : IHostHardwareInfoProvider
         }
 
         return null;
+    }
+
+    private static string? TryReadLinuxCpuBrand()
+    {
+        try
+        {
+            if (!File.Exists("/proc/cpuinfo"))
+                return null;
+
+            string? modelName = null;
+            string? hardware = null;
+            string? processor = null;
+
+            foreach (var line in File.ReadLines("/proc/cpuinfo"))
+            {
+                var idx = line.IndexOf(':');
+                if (idx < 0)
+                    continue;
+
+                var key = line[..idx].Trim();
+                var value = line[(idx + 1)..].Trim();
+                if (value.Length == 0)
+                    continue;
+
+                if (key.Equals("model name", StringComparison.OrdinalIgnoreCase))
+                {
+                    modelName = value;
+                    break;
+                }
+
+                if (hardware is null && key.Equals("Hardware", StringComparison.OrdinalIgnoreCase))
+                    hardware = value;
+                else if (processor is null && key.Equals("Processor", StringComparison.OrdinalIgnoreCase))
+                    processor = value;
+            }
+
+            return modelName ?? hardware ?? processor;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static double? TryReadLinuxTotalRamMb()

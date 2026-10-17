@@ -67,6 +67,7 @@ public static class UseCasesServiceCollectionExtensions
         services.AddScoped<AskServersUseCase>();
         services.AddScoped<ClaimServerUseCase>();
         services.AddHostedService<BotBlacklistWarmupHostedService>();
+        services.AddHostedService<BotRpmMetricsHostedService>();
         services.AddHostedService<MessageRetentionHostedService>();
         services.AddHostedService<TrustRecoveryHostedService>();
         services.AddHostedService<HostPowersMeasurementHostedService>();

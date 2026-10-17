@@ -86,6 +86,90 @@ public class InMemoryBotRateLimiterTests
         Assert.True(ex.RetryAfterSeconds is > 0);
     }
 
+    [Fact]
+    public async Task NoteRequest_TakeRequestCount_ReturnsAndResets()
+    {
+        var h = CreateHarness(baseRps: 10, cores: 8, ramGb: 8, bandwidthMbps: 10);
+
+        Assert.Equal(0, h.Limiter.TakeRequestCount());
+        h.Limiter.NoteRequest();
+        h.Limiter.NoteRequest();
+        h.Limiter.NoteRequest();
+        Assert.Equal(3, h.Limiter.TakeRequestCount());
+        Assert.Equal(0, h.Limiter.TakeRequestCount());
+
+        var rps = await h.Limiter.GetRpsLimitAsync();
+        Assert.True(rps >= BotRpsLimitCalculator.MinRpsLimit);
+    }
+
+    [Fact]
+    public async Task AutoCpuType_UsesDetectedBrandPenalty()
+    {
+        var clock = new FakeClock(T0);
+        var options = new BotRateLimitOptions
+        {
+            Enabled = true,
+            BaseRps = 10,
+            BandwidthMbps = 10,
+            CpuType = "Auto",
+            CooldownBaseSeconds = 30,
+            CooldownTriggerCount = 3
+        };
+
+        // 8 cores → K_cpu=1, 8 GiB → 1.4, 10 Mbps → 1, Ryzen 9 → 1.25
+        // capacity = 10 * 1 * 1.4 * 1 * 1.25 = 17.5
+        var hardware = new FakeHostHardwareInfoProvider
+        {
+            Info = new HostHardwareInfo(3000, 8, 8 * 1024, "AMD Ryzen 9 5950X")
+        };
+
+        var limiter = new InMemoryBotRateLimiter(
+            new StaticOptionsMonitor<BotRateLimitOptions>(options),
+            hardware,
+            clock);
+
+        for (var i = 0; i < 17; i++)
+            Assert.True((await limiter.TryAcquireAsync("bot")).IsAllowed);
+
+        Assert.False((await limiter.TryAcquireAsync("bot")).IsAllowed);
+    }
+
+    [Fact]
+    public async Task AutoCpuType_WhenHardwareMissing_UsesPentiumAndTwoCores()
+    {
+        var clock = new FakeClock(T0);
+        var options = new BotRateLimitOptions
+        {
+            Enabled = true,
+            BaseRps = 10,
+            BandwidthMbps = 10,
+            CpuType = "Auto",
+            RamGigabytes = 8,
+            CooldownBaseSeconds = 30,
+            CooldownTriggerCount = 3
+        };
+
+        // cores=2 → K_cpu=1/3, 8 GiB → 1.4, 10 Mbps → 1, pentium → 0.75
+        // RPS = 10 * (1/3) * 1.4 * 1 * 0.75 = 3.5 → capacity 3.5
+        var expected = BotRpsLimitCalculator.Compute(
+            baseRps: 10,
+            logicalCoreCount: 2,
+            totalRamMegabytes: 8 * 1024,
+            bandwidthMbps: 10,
+            cpuType: "pentium");
+
+        var limiter = new InMemoryBotRateLimiter(
+            new StaticOptionsMonitor<BotRateLimitOptions>(options),
+            new FakeHostHardwareInfoProvider { Info = null },
+            clock);
+
+        var fullTokens = (int)Math.Floor(expected);
+        for (var i = 0; i < fullTokens; i++)
+            Assert.True((await limiter.TryAcquireAsync("bot")).IsAllowed);
+
+        Assert.False((await limiter.TryAcquireAsync("bot")).IsAllowed);
+    }
+
     private static Harness CreateHarness(
         double baseRps,
         int cores,

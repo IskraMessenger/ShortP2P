@@ -32,6 +32,15 @@ internal static class MacOsHostMetrics
         return bytes / (1024.0 * 1024.0);
     }
 
+    public static string? TryReadCpuBrandString()
+    {
+        if (TrySysctlString("machdep.cpu.brand_string", out var brand) &&
+            !string.IsNullOrWhiteSpace(brand))
+            return brand.Trim();
+
+        return null;
+    }
+
     public static async Task<double?> TryReadCpuBusyAsync(CancellationToken cancellationToken)
     {
         if (!TryReadCpuTicks(out var a))
@@ -153,6 +162,32 @@ internal static class MacOsHostMetrics
                 return false;
             value = Marshal.ReadInt32(buffer);
             return true;
+        }
+        catch
+        {
+            return false;
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
+    }
+
+    private static bool TrySysctlString(string name, out string value)
+    {
+        value = "";
+        var len = UIntPtr.Zero;
+        if (sysctlbyname(name, IntPtr.Zero, ref len, IntPtr.Zero, UIntPtr.Zero) != 0 || len == UIntPtr.Zero)
+            return false;
+
+        var buffer = Marshal.AllocHGlobal((int)len);
+        try
+        {
+            if (sysctlbyname(name, buffer, ref len, IntPtr.Zero, UIntPtr.Zero) != 0 || len == UIntPtr.Zero)
+                return false;
+
+            value = Marshal.PtrToStringUTF8(buffer) ?? "";
+            return !string.IsNullOrEmpty(value);
         }
         catch
         {

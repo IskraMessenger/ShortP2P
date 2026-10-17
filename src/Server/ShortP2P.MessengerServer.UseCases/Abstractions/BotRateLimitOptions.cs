@@ -14,9 +14,10 @@ public sealed class BotRateLimitOptions
     public double BandwidthMbps { get; set; } = 1;
 
     /// <summary>
-    /// CPU type key for K_type_penalty (e.g. <c>pentium</c>, <c>arm64</c>, <c>ryzen_5</c>).
+    /// CPU type key for K_type_penalty (e.g. <c>pentium</c>, <c>arm64</c>, <c>ryzen_5</c>),
+    /// or <c>Auto</c> to detect from host CPU brand (fallback <c>pentium</c>).
     /// </summary>
-    public string CpuType { get; set; } = "pentium";
+    public string CpuType { get; set; } = "Auto";
 
     /// <summary>
     /// Default host RAM in GiB for K_ram when hardware probe is unavailable.

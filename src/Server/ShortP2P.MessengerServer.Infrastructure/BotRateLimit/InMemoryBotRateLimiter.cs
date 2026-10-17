@@ -17,6 +17,14 @@ public sealed class InMemoryBotRateLimiter(
     private readonly object _limitGate = new();
     private double _cachedRpsLimit = BotRpsLimitCalculator.MinRpsLimit;
     private DateTime _limitComputedAtUtc = DateTime.MinValue;
+    private long _requestsSinceLastTake;
+
+    public void NoteRequest() => Interlocked.Increment(ref _requestsSinceLastTake);
+
+    public long TakeRequestCount() => Interlocked.Exchange(ref _requestsSinceLastTake, 0);
+
+    public Task<double> GetRpsLimitAsync(CancellationToken cancellationToken = default) =>
+        GetRpsLimitCoreAsync(options.CurrentValue, clock.UtcNow, cancellationToken);
 
     public async Task<BotRateLimitDecision> TryAcquireAsync(
         string botNetworkId,
@@ -30,7 +38,7 @@ public sealed class InMemoryBotRateLimiter(
             return BotRateLimitDecision.Allow();
 
         var now = clock.UtcNow;
-        var rpsLimit = await GetRpsLimitAsync(opts, now, cancellationToken).ConfigureAwait(false);
+        var rpsLimit = await GetRpsLimitCoreAsync(opts, now, cancellationToken).ConfigureAwait(false);
         var bucket = _buckets.GetOrAdd(botNetworkId.Trim(), _ => new BotBucket(rpsLimit, now));
 
         lock (bucket.Gate)
@@ -88,7 +96,7 @@ public sealed class InMemoryBotRateLimiter(
         bucket.LastRefillUtc = now;
     }
 
-    private async Task<double> GetRpsLimitAsync(
+    private async Task<double> GetRpsLimitCoreAsync(
         BotRateLimitOptions opts,
         DateTime now,
         CancellationToken cancellationToken)
@@ -100,20 +108,19 @@ public sealed class InMemoryBotRateLimiter(
         }
 
         var info = await hardware.TryGetAsync(cancellationToken).ConfigureAwait(false);
-        var cores = info?.LogicalCoreCount > 0
-            ? info.LogicalCoreCount
-            : Math.Max(1, Environment.ProcessorCount);
+        var cores = BotCpuTypeResolver.ResolveCoreCount(info?.LogicalCoreCount);
         var defaultRamGb = opts.RamGigabytes > 0 ? opts.RamGigabytes : 1;
         var ramMb = info is { TotalRamMegabytes: > 0 }
             ? info.TotalRamMegabytes
             : defaultRamGb * 1024.0;
+        var cpuType = BotCpuTypeResolver.ResolveCpuType(opts.CpuType, info?.CpuBrandName);
 
         var limit = BotRpsLimitCalculator.Compute(
             opts.BaseRps,
             cores,
             ramMb,
             opts.BandwidthMbps,
-            opts.CpuType);
+            cpuType);
 
         lock (_limitGate)
         {

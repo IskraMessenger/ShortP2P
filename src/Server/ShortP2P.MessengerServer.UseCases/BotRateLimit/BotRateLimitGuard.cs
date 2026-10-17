@@ -12,10 +12,12 @@ public sealed class BotRateLimitGuard(
         string botNetworkId,
         CancellationToken cancellationToken = default)
     {
-        if (!options.Value.Enabled)
+        if (string.IsNullOrWhiteSpace(botNetworkId))
             return;
 
-        if (string.IsNullOrWhiteSpace(botNetworkId))
+        limiter.NoteRequest();
+
+        if (!options.Value.Enabled)
             return;
 
         var decision = await limiter
