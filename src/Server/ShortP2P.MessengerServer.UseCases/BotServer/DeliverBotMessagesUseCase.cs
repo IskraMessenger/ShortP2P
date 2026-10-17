@@ -45,21 +45,21 @@ public sealed class DeliverBotMessagesUseCase(
         var pending = new List<BotToClientMessage>(command.Messages.Count);
         foreach (var item in command.Messages)
         {
-            if (item is null
-                || string.IsNullOrWhiteSpace(item.ClientNetworkId)
-                || string.IsNullOrWhiteSpace(item.EncryptedMessageBase64))
-            {
+            if (item is null)
                 throw UseCaseException.Validation("Client network id and encrypted message are required.");
-            }
+
+            var clientNetworkId = InputGuard.NetworkId(item.ClientNetworkId, "clientNetworkId");
+            var ciphertext = InputGuard.CiphertextBase64(
+                item.EncryptedMessageBase64, MessageLimits.MaxCiphertextBytes, "encryptedMessage");
 
             pending.Add(new BotToClientMessage
             {
                 MessageId = Guid.NewGuid().ToString("N"),
                 BotNetworkId = account.NetworkId,
-                ClientNetworkId = item.ClientNetworkId.Trim(),
+                ClientNetworkId = clientNetworkId,
                 CreatedUtc = clock.UtcNow,
-                EncryptedMessageBase64 = item.EncryptedMessageBase64.Trim(),
-                CorrelationId = NormalizeCorrelationId(item.CorrelationId)
+                EncryptedMessageBase64 = ciphertext,
+                CorrelationId = InputGuard.CorrelationId(item.CorrelationId)
             });
         }
 
@@ -68,20 +68,5 @@ public sealed class DeliverBotMessagesUseCase(
             await messages.AddAsync(message, cancellationToken).ConfigureAwait(false);
             wait.Notify(message.ClientNetworkId);
         }
-    }
-
-    private static string? NormalizeCorrelationId(string? correlationId)
-    {
-        if (string.IsNullOrWhiteSpace(correlationId))
-            return null;
-
-        var value = correlationId.Trim();
-        if (value.Length > BotLimits.MaxCorrelationIdLength)
-        {
-            throw UseCaseException.Validation(
-                $"correlationId must be at most {BotLimits.MaxCorrelationIdLength} characters.");
-        }
-
-        return value;
     }
 }

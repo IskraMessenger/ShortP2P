@@ -23,25 +23,31 @@ public sealed class BotAccessLogService(
         string detail,
         CancellationToken cancellationToken = default)
     {
-        var id = string.IsNullOrWhiteSpace(networkId) ? string.Empty : networkId.Trim();
+        var id = CleartextFieldRules.Sanitize(networkId, NetworkIdRules.MaxLength);
+        var safeBotName = string.IsNullOrWhiteSpace(botName)
+            ? null
+            : CleartextFieldRules.Sanitize(botName, 256);
+        if (string.IsNullOrEmpty(safeBotName))
+            safeBotName = null;
+
         var entry = new BotAccessLogEntry
         {
             Id = 0,
             AtUtc = clock.UtcNow,
             NetworkId = id,
-            BotName = string.IsNullOrWhiteSpace(botName) ? null : botName.Trim(),
-            Operation = operation,
-            Outcome = outcome,
-            Detail = detail
+            BotName = safeBotName,
+            Operation = CleartextFieldRules.Sanitize(operation, 64),
+            Outcome = CleartextFieldRules.Sanitize(outcome, 64),
+            Detail = CleartextFieldRules.Sanitize(detail, 1024)
         };
 
-        if (string.Equals(outcome, OutcomeForbidden, StringComparison.Ordinal))
+        if (string.Equals(entry.Outcome, OutcomeForbidden, StringComparison.Ordinal))
         {
             logger.LogWarning(
                 "Bot access denied (403): operation={Operation} networkId={NetworkId} detail={Detail}",
-                operation,
-                id,
-                detail);
+                entry.Operation,
+                entry.NetworkId,
+                entry.Detail);
         }
 
         try

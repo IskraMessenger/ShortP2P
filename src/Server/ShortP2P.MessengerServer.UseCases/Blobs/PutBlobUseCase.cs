@@ -13,17 +13,11 @@ public sealed class PutBlobUseCase(IBlobRepository blobs, IClock clock)
     {
         ArgumentNullException.ThrowIfNull(command);
 
-        var blobId = command.BlobId?.Trim() ?? "";
-        var src = command.SrcNetworkId?.Trim() ?? "";
-        var tgt = command.TgtNetworkId?.Trim() ?? "";
+        var blobId = InputGuard.BlobId(command.BlobId);
+        var src = InputGuard.NetworkId(command.SrcNetworkId, "srcNetworkId");
+        var tgt = InputGuard.NetworkId(command.TgtNetworkId, "tgtNetworkId");
         var ciphertext = command.Ciphertext ?? [];
 
-        if (blobId.Length is 0 or > 128)
-            throw UseCaseException.Validation("blobId is required (max 128 characters).");
-        if (src.Length == 0)
-            throw UseCaseException.Validation("srcNetworkId is required.");
-        if (tgt.Length == 0)
-            throw UseCaseException.Validation("tgtNetworkId is required.");
         if (ciphertext.Length == 0)
             throw UseCaseException.Validation("Ciphertext is required.");
         if (ciphertext.Length > MaxCiphertextBytes)

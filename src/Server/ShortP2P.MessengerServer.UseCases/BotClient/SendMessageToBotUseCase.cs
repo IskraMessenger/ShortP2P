@@ -14,19 +14,15 @@ public sealed class SendMessageToBotUseCase(
 {
     public async Task ExecuteAsync(SendMessageToBotCommand command, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(command.CallerNetworkId)
-            || string.IsNullOrWhiteSpace(command.MessageId)
-            || string.IsNullOrWhiteSpace(command.BotNetworkId)
-            || string.IsNullOrWhiteSpace(command.Message)
-            || command.DateTime == default)
-        {
+        if (command.DateTime == default)
             throw UseCaseException.Validation("MessageId, networkId, dateTime and message are required.");
-        }
 
-        var correlationId = NormalizeCorrelationId(command.CorrelationId);
-        var caller = command.CallerNetworkId.Trim();
-        var botNetworkId = command.BotNetworkId.Trim();
-        var messageId = command.MessageId.Trim();
+        var caller = InputGuard.NetworkId(command.CallerNetworkId, "callerNetworkId");
+        var botNetworkId = InputGuard.NetworkId(command.BotNetworkId, "botNetworkId");
+        var messageId = InputGuard.MessageId(command.MessageId);
+        var correlationId = InputGuard.CorrelationId(command.CorrelationId);
+        var ciphertext = InputGuard.CiphertextBase64(
+            command.Message, MessageLimits.MaxCiphertextBytes, "message");
 
         if (await blacklist.ContainsAsync(botNetworkId, cancellationToken).ConfigureAwait(false))
             throw UseCaseException.Forbidden("Bot is not allowed.");
@@ -44,26 +40,11 @@ public sealed class SendMessageToBotUseCase(
                 ClientNetworkId = caller,
                 BotNetworkId = botNetworkId,
                 CreatedUtc = DateTime.SpecifyKind(command.DateTime, DateTimeKind.Utc),
-                EncryptedMessageBase64 = command.Message.Trim(),
+                EncryptedMessageBase64 = ciphertext,
                 CorrelationId = correlationId
             },
             cancellationToken).ConfigureAwait(false);
 
         wait.Notify(botNetworkId);
-    }
-
-    internal static string? NormalizeCorrelationId(string? correlationId)
-    {
-        if (string.IsNullOrWhiteSpace(correlationId))
-            return null;
-
-        var value = correlationId.Trim();
-        if (value.Length > BotLimits.MaxCorrelationIdLength)
-        {
-            throw UseCaseException.Validation(
-                $"correlationId must be at most {BotLimits.MaxCorrelationIdLength} characters.");
-        }
-
-        return value;
     }
 }

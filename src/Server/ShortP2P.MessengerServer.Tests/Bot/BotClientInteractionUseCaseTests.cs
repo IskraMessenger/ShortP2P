@@ -12,6 +12,8 @@ namespace ShortP2P.MessengerServer.Tests.Bot;
 
 public class BotClientInteractionUseCaseTests
 {
+    private const string Cipher = "Y2lwaGVy";
+
     private static readonly DateTime T0 = new(2026, 10, 17, 8, 0, 0, DateTimeKind.Utc);
 
     [Fact]
@@ -24,7 +26,7 @@ public class BotClientInteractionUseCaseTests
         var second = await h.Wait().ExecuteAsync(new WaitForBotMessagesQuery("client", 1));
 
         Assert.Single(first);
-        Assert.Equal("cipher", first[0].EncryptedMessageBase64);
+        Assert.Equal(Cipher, first[0].EncryptedMessageBase64);
         Assert.Single(second);
     }
 
@@ -81,7 +83,7 @@ public class BotClientInteractionUseCaseTests
 
         var wake = h.BotWait.WaitAsync("bot", TimeSpan.FromSeconds(5));
         await h.Send().ExecuteAsync(new SendMessageToBotCommand(
-            "client", "mid", "bot", T0, "cipher", "corr"));
+            "client", "mid", "bot", T0, Cipher, "corr"));
         await wake;
 
         var taken = await h.ToBot.TakeForBotAsync("bot");
@@ -94,7 +96,7 @@ public class BotClientInteractionUseCaseTests
     {
         var h = new Harness();
         var ex = await Assert.ThrowsAsync<UseCaseException>(() =>
-            h.Send().ExecuteAsync(new SendMessageToBotCommand("client", "mid", "bot", T0, "cipher", null)));
+            h.Send().ExecuteAsync(new SendMessageToBotCommand("client", "mid", "bot", T0, Cipher, null)));
         Assert.Equal("NotFound", ex.Code);
     }
 
@@ -115,7 +117,7 @@ public class BotClientInteractionUseCaseTests
         await h.Blacklist.AddAsync("bot");
 
         var ex = await Assert.ThrowsAsync<UseCaseException>(() =>
-            h.Send().ExecuteAsync(new SendMessageToBotCommand("client", "mid", "bot", T0, "cipher", null)));
+            h.Send().ExecuteAsync(new SendMessageToBotCommand("client", "mid", "bot", T0, Cipher, null)));
         Assert.Equal("Forbidden", ex.Code);
         Assert.Empty(await h.ToBot.TakeForBotAsync("bot"));
     }
@@ -149,7 +151,38 @@ public class BotClientInteractionUseCaseTests
 
         var ex = await Assert.ThrowsAsync<UseCaseException>(() =>
             h.Send().ExecuteAsync(new SendMessageToBotCommand(
-                "client", "mid", "bot", T0, "cipher", new string('x', 33))));
+                "client", "mid", "bot", T0, Cipher, new string('x', 33))));
+        Assert.Equal("Validation", ex.Code);
+    }
+
+    [Fact]
+    public async Task Send_WhenCiphertextNotBase64_ThrowsValidation()
+    {
+        var h = new Harness();
+        h.Bots.Add(new BotAccount
+        {
+            NetworkId = "bot",
+            BotName = "echo",
+            BotReadableName = "Echo",
+            BotDescription = "test",
+            KeySalt = "s",
+            KeyHash = "h",
+            CreatedAtUtc = T0
+        });
+
+        var ex = await Assert.ThrowsAsync<UseCaseException>(() =>
+            h.Send().ExecuteAsync(new SendMessageToBotCommand(
+                "client", "mid", "bot", T0, "not-valid-base64!!!", null)));
+        Assert.Equal("Validation", ex.Code);
+    }
+
+    [Fact]
+    public async Task Send_WhenNetworkIdHasInjectionChars_ThrowsValidation()
+    {
+        var h = new Harness();
+        var ex = await Assert.ThrowsAsync<UseCaseException>(() =>
+            h.Send().ExecuteAsync(new SendMessageToBotCommand(
+                "client'; drop", "mid", "bot", T0, Cipher, null)));
         Assert.Equal("Validation", ex.Code);
     }
 
@@ -159,7 +192,7 @@ public class BotClientInteractionUseCaseTests
         BotNetworkId = "bot",
         ClientNetworkId = "client",
         CreatedUtc = T0,
-        EncryptedMessageBase64 = "cipher",
+        EncryptedMessageBase64 = Cipher,
         CorrelationId = "c"
     };
 
