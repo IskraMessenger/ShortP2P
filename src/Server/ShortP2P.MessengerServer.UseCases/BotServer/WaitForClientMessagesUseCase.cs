@@ -33,7 +33,8 @@ public sealed class WaitForClientMessagesUseCase(
         if (timeoutSeconds < 1 || timeoutSeconds > opts.MaxPollTimeoutSeconds)
             throw UseCaseException.Validation($"timeoutSeconds must be between 1 and {opts.MaxPollTimeoutSeconds}.");
 
-        var pending = DropExpired(await messages.TakeForBotAsync(account.NetworkId, cancellationToken).ConfigureAwait(false));
+        var taken = await messages.TakeForBotAsync(account.NetworkId, cancellationToken).ConfigureAwait(false);
+        var pending = FilterExpired(taken);
         if (pending.Count > 0)
             return pending;
 
@@ -41,10 +42,11 @@ public sealed class WaitForClientMessagesUseCase(
             .WaitAsync(account.NetworkId, TimeSpan.FromSeconds(timeoutSeconds), cancellationToken)
             .ConfigureAwait(false);
 
-        return DropExpired(await messages.TakeForBotAsync(account.NetworkId, cancellationToken).ConfigureAwait(false));
+        taken = await messages.TakeForBotAsync(account.NetworkId, cancellationToken).ConfigureAwait(false);
+        return FilterExpired(taken);
     }
 
-    private IReadOnlyList<ClientToBotMessage> DropExpired(IReadOnlyList<ClientToBotMessage> taken)
+    private IReadOnlyList<ClientToBotMessage> FilterExpired(IReadOnlyList<ClientToBotMessage> taken)
     {
         var cutoff = clock.UtcNow - inboxOptions.Value.MessageRetention;
         return taken.Where(m => m.CreatedUtc >= cutoff).ToArray();

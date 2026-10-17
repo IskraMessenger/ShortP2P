@@ -1,3 +1,4 @@
+using ShortP2P.MessengerServer.Domain;
 using ShortP2P.MessengerServer.UseCases.Abstractions;
 
 namespace ShortP2P.MessengerServer.UseCases.BotServer;
@@ -8,6 +9,9 @@ public sealed class LoginBotUseCase(
     IPasswordHasher passwordHasher,
     IAuthTokenService tokenService)
 {
+    /// <summary>Bots are not device-bound; tokens use an all-zero device id placeholder.</summary>
+    private static readonly string BotDeviceId = new string('0', DeviceIdRules.Length);
+
     public async Task<LoginBotResult> ExecuteAsync(
         LoginBotCommand command,
         CancellationToken cancellationToken = default)
@@ -21,7 +25,7 @@ public sealed class LoginBotUseCase(
             requireBotName: true,
             cancellationToken).ConfigureAwait(false);
 
-        var token = tokenService.IssueToken(account.NetworkId, new string('0', 64));
+        var token = tokenService.IssueToken(account.NetworkId, BotDeviceId);
         return new LoginBotResult(token.Token, token.ExpiresAtUtc);
     }
 }
