@@ -2,6 +2,7 @@ using ShortP2P.MessengerServer.Contracts;
 using ShortP2P.MessengerServer.Domain;
 using ShortP2P.MessengerServer.UseCases.Abstractions;
 using ShortP2P.MessengerServer.UseCases.BotBlacklist;
+using ShortP2P.MessengerServer.UseCases.BotRateLimit;
 
 namespace ShortP2P.MessengerServer.UseCases.BotServer;
 
@@ -14,7 +15,8 @@ public sealed class DeliverBotMessagesUseCase(
     IBotToClientWaitService wait,
     IPasswordHasher passwordHasher,
     IClock clock,
-    BotBlacklistGuard blacklistGuard)
+    BotBlacklistGuard blacklistGuard,
+    BotRateLimitGuard rateLimitGuard)
 {
     public async Task ExecuteAsync(
         DeliverBotMessagesCommand command,
@@ -32,6 +34,10 @@ public sealed class DeliverBotMessagesUseCase(
             botName: null,
             requireBotName: false,
             cancellationToken).ConfigureAwait(false);
+
+        await rateLimitGuard
+            .EnsureAllowedAsync(account.NetworkId, cancellationToken)
+            .ConfigureAwait(false);
 
         if (command.Messages is not { Count: > 0 })
             throw UseCaseException.Validation("Messages are required.");

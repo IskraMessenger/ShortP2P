@@ -26,6 +26,8 @@ builder.Services
 
 builder.Services.Configure<MessengerInboxOptions>(
     builder.Configuration.GetSection(MessengerInboxOptions.Section));
+builder.Services.Configure<BotRateLimitOptions>(
+    builder.Configuration.GetSection(BotRateLimitOptions.Section));
 
 builder.Services.AddPersistence(builder.Configuration);
 builder.Services.AddHostPowersLiteDb(builder.Configuration);
