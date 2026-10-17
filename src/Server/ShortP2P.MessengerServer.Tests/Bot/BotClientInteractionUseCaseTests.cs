@@ -1,8 +1,10 @@
 using Microsoft.Extensions.Options;
 using ShortP2P.MessengerServer.Domain;
+using ShortP2P.MessengerServer.Infrastructure.Caching;
 using ShortP2P.MessengerServer.Tests.Fakes;
 using ShortP2P.MessengerServer.UseCases;
 using ShortP2P.MessengerServer.UseCases.Abstractions;
+using ShortP2P.MessengerServer.UseCases.BotBlacklist;
 using ShortP2P.MessengerServer.UseCases.BotClient;
 using ShortP2P.MessengerServer.UseCases.Hosting;
 
@@ -97,6 +99,40 @@ public class BotClientInteractionUseCaseTests
     }
 
     [Fact]
+    public async Task Send_WhenBotBlacklisted_ThrowsForbidden_AndDoesNotStore()
+    {
+        var h = new Harness();
+        h.Bots.Add(new BotAccount
+        {
+            NetworkId = "bot",
+            BotName = "echo",
+            BotReadableName = "Echo",
+            BotDescription = "test",
+            KeySalt = "s",
+            KeyHash = "h",
+            CreatedAtUtc = T0
+        });
+        await h.Blacklist.AddAsync("bot");
+
+        var ex = await Assert.ThrowsAsync<UseCaseException>(() =>
+            h.Send().ExecuteAsync(new SendMessageToBotCommand("client", "mid", "bot", T0, "cipher", null)));
+        Assert.Equal("Forbidden", ex.Code);
+        Assert.Empty(await h.ToBot.TakeForBotAsync("bot"));
+    }
+
+    [Fact]
+    public async Task Wait_DropsMessagesFromBlacklistedBots()
+    {
+        var h = new Harness();
+        h.ToClient.Add(Sample("m1"));
+        await h.Blacklist.AddAsync("bot");
+
+        var result = await h.Wait().ExecuteAsync(new WaitForBotMessagesQuery("client", 1));
+        Assert.Empty(result);
+        Assert.Null(await h.ToClient.FindByIdAsync("m1"));
+    }
+
+    [Fact]
     public async Task Send_WhenCorrelationTooLong_ThrowsValidation()
     {
         var h = new Harness();
@@ -135,13 +171,53 @@ public class BotClientInteractionUseCaseTests
         public BotToClientWaitService ClientWait { get; } = new();
         public ClientToBotWaitService BotWait { get; } = new();
         public FakeClock Clock { get; } = new(T0);
+        public BotBlacklistService Blacklist { get; }
+
+        public Harness()
+        {
+            var cache = new InMemoryBotBlacklistCache();
+            var repo = new MemoryBotBlacklistRepo();
+            Blacklist = new BotBlacklistService(
+                repo,
+                cache,
+                new MessengerCacheOptions { CacheEnabled = true, RepositoryEnabled = true },
+                Clock);
+        }
 
         public WaitForBotMessagesUseCase Wait() =>
-            new(ToClient, ClientWait, Options.Create(new MessengerInboxOptions { MaxPollTimeoutSeconds = 30 }), Clock);
+            new(
+                ToClient,
+                ClientWait,
+                Options.Create(new MessengerInboxOptions { MaxPollTimeoutSeconds = 30 }),
+                Clock,
+                Blacklist);
 
         public AcknowledgeBotMessageUseCase Ack() => new(ToClient);
 
-        public SendMessageToBotUseCase Send() => new(Bots, ToBot, BotWait);
+        public SendMessageToBotUseCase Send() => new(Bots, ToBot, BotWait, Blacklist);
+    }
+
+    private sealed class MemoryBotBlacklistRepo : IBotBlacklistRepository
+    {
+        private readonly Dictionary<string, BotBlacklistEntry> _items = new(StringComparer.Ordinal);
+
+        public Task AddAsync(BotBlacklistEntry entry, CancellationToken cancellationToken = default)
+        {
+            _items[entry.NetworkId] = entry;
+            return Task.CompletedTask;
+        }
+
+        public Task RemoveAsync(string networkId, CancellationToken cancellationToken = default)
+        {
+            _items.Remove(networkId);
+            return Task.CompletedTask;
+        }
+
+        public Task<bool> ContainsAsync(string networkId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(_items.ContainsKey(networkId));
+
+        public Task<IReadOnlyList<BotBlacklistEntry>> ListAllAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<BotBlacklistEntry>>(_items.Values.ToArray());
     }
 
     private sealed class MemoryBotAccounts : IBotAccountRepository

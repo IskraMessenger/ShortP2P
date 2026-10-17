@@ -458,6 +458,65 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /api/v1/bots/blacklist:
+    get:
+      operationId: getBotBlackList
+      summary: List blacklisted bot network ids
+      tags: [Bots]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Blacklisted bot network ids
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BotBlacklistEntryDto'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      operationId: addBotToBlacklist
+      summary: Add a bot network id to the server blacklist
+      tags: [Bots]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddBotToBlacklistRequest'
+      responses:
+        '204':
+          description: Added (idempotent)
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/bots/blacklist/{networkId}:
+    delete:
+      operationId: removeBotFromBlacklist
+      summary: Remove a bot network id from the server blacklist
+      tags: [Bots]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: networkId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Removed (idempotent)
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
   /api/v1/bot_client_interaction/wait_for_messages:
     post:
       operationId: waitForBotMessages
@@ -896,6 +955,22 @@ components:
         receivedAtUtc:
           type: string
           format: date-time
+
+    BotBlacklistEntryDto:
+      type: object
+      required: [networkId]
+      properties:
+        networkId:
+          type: string
+          description: Blacklisted bot short network id
+
+    AddBotToBlacklistRequest:
+      type: object
+      required: [networkId]
+      properties:
+        networkId:
+          type: string
+          description: Bot short network id to blacklist
 
     ApiError:
       type: object

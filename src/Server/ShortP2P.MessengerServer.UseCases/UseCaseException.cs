@@ -23,5 +23,7 @@ public sealed class UseCaseException : Exception
 
     public static UseCaseException Unauthorized(string message) => new("Unauthorized", message);
 
+    public static UseCaseException Forbidden(string message) => new("Forbidden", message);
+
     public static UseCaseException Unavailable(string message) => new("Unavailable", message);
 }

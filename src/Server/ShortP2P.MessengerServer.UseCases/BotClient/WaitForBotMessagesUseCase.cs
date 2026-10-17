@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Options;
 using ShortP2P.MessengerServer.Domain;
 using ShortP2P.MessengerServer.UseCases.Abstractions;
+using ShortP2P.MessengerServer.UseCases.BotBlacklist;
 
 namespace ShortP2P.MessengerServer.UseCases.BotClient;
 
@@ -9,7 +10,8 @@ public sealed class WaitForBotMessagesUseCase(
     IBotToClientMessageRepository messages,
     IBotToClientWaitService wait,
     IOptions<MessengerInboxOptions> inboxOptions,
-    IClock clock)
+    IClock clock,
+    BotBlacklistService blacklist)
 {
     public async Task<IReadOnlyList<BotToClientMessage>> ExecuteAsync(
         WaitForBotMessagesQuery query,
@@ -41,9 +43,21 @@ public sealed class WaitForBotMessagesUseCase(
     {
         var cutoff = clock.UtcNow - inboxOptions.Value.MessageRetention;
         var list = await messages.ListForClientAsync(caller, cancellationToken).ConfigureAwait(false);
-        return list
-            .Where(m => m.CreatedUtc >= cutoff)
-            .OrderBy(m => m.CreatedUtc)
-            .ToArray();
+        var fresh = new List<BotToClientMessage>();
+        foreach (var message in list.OrderBy(m => m.CreatedUtc))
+        {
+            if (message.CreatedUtc < cutoff)
+                continue;
+
+            if (await blacklist.ContainsAsync(message.BotNetworkId, cancellationToken).ConfigureAwait(false))
+            {
+                await messages.RemoveAsync(message.MessageId, cancellationToken).ConfigureAwait(false);
+                continue;
+            }
+
+            fresh.Add(message);
+        }
+
+        return fresh;
     }
 }

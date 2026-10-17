@@ -312,6 +312,44 @@ public sealed class MessengerServerApiClient(
         await MessengerServerJson.EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<IReadOnlyList<BotBlacklistEntryDto>> GetBotBlackListAsync(
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient
+            .GetAsync(ApiRoutes.BotBlacklist, cancellationToken)
+            .ConfigureAwait(false);
+
+        var list = await MessengerServerJson
+            .ReadJsonAsync<BotBlacklistEntryDto[]>(response, cancellationToken)
+            .ConfigureAwait(false);
+
+        return list;
+    }
+
+    public async Task AddBotToBlacklistAsync(
+        AddBotToBlacklistRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        Require.NotNull(request);
+
+        using var response = await httpClient
+            .PostAsync(ApiRoutes.BotBlacklist, MessengerServerJson.ToJsonContent(request), cancellationToken)
+            .ConfigureAwait(false);
+
+        await MessengerServerJson.EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task RemoveBotFromBlacklistAsync(
+        string networkId,
+        CancellationToken cancellationToken = default)
+    {
+        Require.NotNullOrWhiteSpace(networkId);
+
+        var url = $"{ApiRoutes.BotBlacklist}/{Uri.EscapeDataString(networkId.Trim())}";
+        using var response = await httpClient.DeleteAsync(url, cancellationToken).ConfigureAwait(false);
+        await MessengerServerJson.EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
+    }
+
     /// <summary>Clears the stored JWT (logout / switch account).</summary>
     public void Logout() => session.Clear();
 }
