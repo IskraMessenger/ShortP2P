@@ -458,6 +458,84 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /api/v1/bot_client_interaction/wait_for_messages:
+    post:
+      operationId: waitForBotMessages
+      summary: Long-poll encrypted messages from bots to this client
+      description: >
+        Messages are not deleted on poll; the client must POST /bot_client_interaction/receipts.
+        Empty list means the long-poll timed out with nothing queued.
+      tags: [BotClient]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BotWaitForMessagesRequest'
+      responses:
+        '200':
+          description: Queued bot → client messages (may be empty)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BotWaitForMessagesResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/bot_client_interaction/send_message:
+    post:
+      operationId: sendMessageToBot
+      summary: Deliver one encrypted client → bot message
+      tags: [BotClient]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BotSendMessageRequest'
+      responses:
+        '200':
+          description: Acknowledgement (errorCode 0 = success, 1 = internal, 2 = wrong input / bot missing)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BotSendMessageResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/bot_client_interaction/receipts:
+    post:
+      operationId: submitBotMessageReceipt
+      summary: Confirm receipt of a bot → client message (server drops its copy)
+      tags: [BotClient]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BotMessageReceiptRequest'
+      responses:
+        '202':
+          description: Accepted; message removed from server store
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Message not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
 components:
   securitySchemes:
     bearerAuth:
@@ -735,6 +813,89 @@ components:
         reason:
           type: string
           enum: [UNAVAILABLE, MALFUNCTIONED, WRONGCERT]
+
+    BotWaitForMessagesRequest:
+      type: object
+      required: [networkId]
+      properties:
+        networkId:
+          type: string
+          description: Client short network id; must match JWT network_id
+        timeoutSeconds:
+          type: integer
+          minimum: 1
+          maximum: 30
+          description: Optional long-poll timeout (server clamps to its max)
+
+    BotWaitForMessagesResponse:
+      type: object
+      required: [messages]
+      properties:
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/BotClientInboundMessageDto'
+
+    BotClientInboundMessageDto:
+      type: object
+      required: [messageId, botNetworkId, dateTime, message]
+      properties:
+        messageId:
+          type: string
+        botNetworkId:
+          type: string
+        dateTime:
+          type: string
+          format: date-time
+        message:
+          type: string
+          description: Opaque ciphertext, base64
+        correlationId:
+          type: string
+          maxLength: 32
+          nullable: true
+
+    BotSendMessageRequest:
+      type: object
+      required: [messageId, networkId, dateTime, message]
+      properties:
+        messageId:
+          type: string
+        networkId:
+          type: string
+          description: Destination bot short network id
+        dateTime:
+          type: string
+          format: date-time
+        message:
+          type: string
+          description: Opaque ciphertext, base64
+        correlationId:
+          type: string
+          maxLength: 32
+          nullable: true
+
+    BotSendMessageResponse:
+      type: object
+      required: [messageId, errorCode, errorMessage]
+      properties:
+        messageId:
+          type: string
+        errorCode:
+          type: integer
+          description: 0 = success, 1 = internal error, 2 = wrong input / bot not found
+        errorMessage:
+          type: string
+
+    BotMessageReceiptRequest:
+      type: object
+      required: [messageId, receivedAtUtc]
+      properties:
+        messageId:
+          type: string
+        receivedAtUtc:
+          type: string
+          format: date-time
 
     ApiError:
       type: object

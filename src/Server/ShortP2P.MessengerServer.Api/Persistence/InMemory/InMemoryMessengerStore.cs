@@ -25,4 +25,10 @@ public sealed class InMemoryMessengerStore
         new(StringComparer.Ordinal);
 
     public ConcurrentDictionary<string, Blob> Blobs { get; } = new(StringComparer.Ordinal);
+
+    public ConcurrentDictionary<string, BotToClientMessage> BotToClientMessages { get; } = new(StringComparer.Ordinal);
+
+    public ConcurrentDictionary<string, ClientToBotMessage> ClientToBotMessages { get; } = new(StringComparer.Ordinal);
+
+    public object ClientToBotGate { get; } = new();
 }

@@ -34,7 +34,8 @@ Thumbs.db
 ehthumbs.db
 
 /.vs
-*.litedb
+# LiteDB data files only — do not use *.litedb (matches Auth.LiteDB/ on Windows)
+messenger*.litedb
 /artifacts/winforms-check
 
 # Server packaging publish output

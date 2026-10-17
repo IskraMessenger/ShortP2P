@@ -1,0 +1,25 @@
+---
+description: One top-level class/struct/record/enum/interface per file
+alwaysApply: true
+---
+
+# One entity per file
+
+Each C# source file must contain **exactly one** top-level type: `class`, `struct`, `record`, `interface`, or `enum`.
+
+## Rules
+
+1. File name matches the type name (`Foo.cs` → `Foo`).
+2. Keep command/query/result records out of the use-case class file — split them.
+3. Nested **private** helper types inside a single top-level type are allowed.
+4. When editing a file that already has multiple top-level types, split them before finishing.
+
+## Example
+
+```csharp
+// ❌ BAD — command + use case in one file
+public sealed record SendFooCommand(...);
+public sealed class SendFooUseCase { ... }
+
+// ✅ GOOD — SendFooCommand.cs / SendFooUseCase.cs (separate files)
+```

@@ -269,6 +269,49 @@ public sealed class MessengerServerApiClient(
         await MessengerServerJson.EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<BotWaitForMessagesResponse> WaitForBotMessagesAsync(
+        BotWaitForMessagesRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        Require.NotNull(request);
+
+        using var response = await httpClient
+            .PostAsync(ApiRoutes.BotClientWaitForMessages, MessengerServerJson.ToJsonContent(request), cancellationToken)
+            .ConfigureAwait(false);
+
+        return await MessengerServerJson
+            .ReadJsonAsync<BotWaitForMessagesResponse>(response, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async Task<BotSendMessageResponse> SendMessageToBotAsync(
+        BotSendMessageRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        Require.NotNull(request);
+
+        using var response = await httpClient
+            .PostAsync(ApiRoutes.BotClientSendMessage, MessengerServerJson.ToJsonContent(request), cancellationToken)
+            .ConfigureAwait(false);
+
+        return await MessengerServerJson
+            .ReadJsonAsync<BotSendMessageResponse>(response, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async Task SubmitBotMessageReceiptAsync(
+        BotMessageReceiptRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        Require.NotNull(request);
+
+        using var response = await httpClient
+            .PostAsync(ApiRoutes.BotClientReceipts, MessengerServerJson.ToJsonContent(request), cancellationToken)
+            .ConfigureAwait(false);
+
+        await MessengerServerJson.EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
+    }
+
     /// <summary>Clears the stored JWT (logout / switch account).</summary>
     public void Logout() => session.Clear();
 }

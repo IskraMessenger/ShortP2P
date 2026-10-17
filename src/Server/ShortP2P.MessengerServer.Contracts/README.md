@@ -38,8 +38,11 @@
 | `POST` | `/api/v1/bot_server_interaction/register` | Регистрация бота → выдача `BotKey` |
 | `POST` | `/api/v1/bot_server_interaction/login` | Авторизация бота по `BotKey` → JWT |
 | `POST` | `/api/v1/bot_server_interaction/remove` | Удаление бота по `networkId` + `BotKey` |
-| `POST` | `/api/v1/bot_data_flow/wait_for_income_messages` | Long-poll входящих сообщений боту (`botNetworkId` + `BotKey`) |
-| `POST` | `/api/v1/bot_data_flow/send_messages` | Отправка сообщений бота клиентам (`[{ networkId, encryptedMessageBase64, correlationId? (≤32) }]`) |
+| `POST` | `/api/v1/bot_server_interaction/wait_for_income_messages` | Long-poll входящих сообщений боту (`botNetworkId` + `BotKey`) |
+| `POST` | `/api/v1/bot_server_interaction/send_messages` | Бот кладёт зашифрованные сообщения клиентам; сервер хранит их до квитанции |
+| `POST` | `/api/v1/bot_client_interaction/wait_for_messages` | Long-poll сообщений ботов для клиента (JWT) |
+| `POST` | `/api/v1/bot_client_interaction/send_message` | Клиент отправляет одно зашифрованное сообщение боту (JWT) |
+| `POST` | `/api/v1/bot_client_interaction/receipts` | Квитанция клиента; сервер удаляет копию сообщения бота |
 
 `deviceId` — 64 lowercase hex (SHA-256 от install GUID). Даты — UTC. `encryptedDataBase64` — opaque.
 
@@ -85,9 +88,14 @@
 
 После удаления бот должен удалить связку «сервер → `BotKey`» из своего хранилища.
 
-## Поток данных бота (`/api/v1/bot_data_flow`)
+## Поток данных бота (`/api/v1/bot_server_interaction`)
 
-Только **HTTPS** (как и вся bot↔server связь).
+Только **HTTPS** (как и вся bot↔server связь). Отдельного контроллера `bot_data_flow` нет:
+отправка и long-poll бота живут на `bot_server_interaction`.
+
+Сервер хранит ciphertext бот → клиент, пока клиент не заберёт его через
+`bot_client_interaction/wait_for_messages` и не пришлёт квитанцию
+`bot_client_interaction/receipts`. До квитанции сообщение не удаляется.
 
 ### WaitForIncomeMessages (long-poll)
 
@@ -113,6 +121,38 @@
 
 `networkId` в каждом элементе — network id **клиента-получателя**.
 Опциональный `correlationId` — сквозной идентификатор client ↔ bot (≤32 символов); сервер передаёт его без изменений.
+
+## Клиент ↔ бот (`/api/v1/bot_client_interaction`)
+
+Только **HTTPS** + **JWT** клиента (`network_id` в токене). Сервер не расшифровывает payload.
+
+### WaitForMessages (long-poll)
+
+Клиент ждёт сообщения от ботов. При отсутствии сообщений сервер держит соединение до `timeoutSeconds`
+(или своего max) и возвращает пустой список. Сообщения **не** удаляются при выдаче — нужна квитанция.
+
+| Сторона | DTO | Поля |
+|---------|-----|------|
+| Клиент → сервер | `BotWaitForMessagesRequest` | `networkId` (должен совпадать с JWT), опционально `timeoutSeconds` |
+| Сервер → клиент | `BotWaitForMessagesResponse` | `messages`: `[{ messageId, botNetworkId, dateTime, message, correlationId? (≤32) }]` |
+
+### SendMessage
+
+Клиент отправляет одно зашифрованное сообщение боту (store-and-forward до long-poll бота).
+
+| Сторона | DTO | Поля |
+|---------|-----|------|
+| Клиент → сервер | `BotSendMessageRequest` | `messageId`, `networkId` (бот), `dateTime`, `message`, опционально `correlationId` |
+| Сервер → клиент | `BotSendMessageResponse` | `messageId`, `errorCode` (0/1/2), `errorMessage` |
+
+### Receipts
+
+Квитанция доставки: сервер удаляет копию сообщения бот → клиент.
+
+| Сторона | DTO | Поля |
+|---------|-----|------|
+| Клиент → сервер | `BotMessageReceiptRequest` | `messageId`, `receivedAtUtc` |
+| Сервер → клиент | — | `202 Accepted` |
 
 ## Сборка
 

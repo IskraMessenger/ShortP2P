@@ -32,6 +32,7 @@ public static class AuthEntityFrameworkExtensions
 
         services.AddDbContext<AuthDbContext>(db => ConfigureProvider(db, options));
         services.AddScoped<IClientAccountRepository, EfClientAccountRepository>();
+        services.AddScoped<IBotAccountRepository, EfBotAccountRepository>();
 
         if (options.ApplyMigrationsOnStartup)
             services.AddHostedService<AuthDbMigrationHostedService>();

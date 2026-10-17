@@ -7,7 +7,7 @@ public sealed class BotSendMessageResponse
     public required string MessageId { get; init; }
 
     /// <summary>
-    /// 0 = success, 1 = internal error, 2 = wrong input.
+    /// 0 = success, 1 = internal error, 2 = wrong input / bot not found.
     /// </summary>
     public required int ErrorCode { get; init; }
 
