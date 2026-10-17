@@ -6,7 +6,7 @@ public class BotRpsLimitCalculatorTests
 {
     [Theory]
     [InlineData(1, 1.0 / 3.0)]
-    [InlineData(2, 0.5)]
+    [InlineData(2, 1.0 / 3.0)]
     [InlineData(4, 2.0 / 3.0)]
     [InlineData(8, 1.0)]
     [InlineData(16, 4.0 / 3.0)]
