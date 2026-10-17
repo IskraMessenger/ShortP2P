@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+using System.Text;
 
 namespace ShortP2P.MessengerServer.Api.HostPowers;
 
@@ -25,12 +26,15 @@ internal static class MacOsHostMetrics
         return null;
     }
 
-    public static double? TryReadTotalRamMb()
-    {
-        if (!TrySysctlUInt64("hw.memsize", out var bytes) || bytes == 0)
-            return null;
-        return bytes / (1024.0 * 1024.0);
-    }
+    public static double? TryReadTotalRamMb() =>
+        TrySysctlUInt64("hw.memsize", out var bytes) && bytes > 0
+            ? bytes / (1024.0 * 1024.0)
+            : null;
+
+    public static string? TryReadCpuBrandString() =>
+        TrySysctlString("machdep.cpu.brand_string", out var brand) && !string.IsNullOrWhiteSpace(brand)
+            ? brand.Trim()
+            : null;
 
     public static async Task<double?> TryReadCpuBusyAsync(CancellationToken cancellationToken)
     {
@@ -161,6 +165,47 @@ internal static class MacOsHostMetrics
         finally
         {
             Marshal.FreeHGlobal(buffer);
+        }
+    }
+
+    /// <summary>
+    /// Reads a NUL-terminated sysctl string (e.g. machdep.cpu.brand_string).
+    /// Uses a short-lived managed buffer + GCHandle pin instead of AllocHGlobal:
+    /// brand strings are small and this path is cold (hardware probe, not per-request).
+    /// </summary>
+    private static bool TrySysctlString(string name, out string value)
+    {
+        value = "";
+        var len = UIntPtr.Zero;
+        if (sysctlbyname(name, IntPtr.Zero, ref len, IntPtr.Zero, UIntPtr.Zero) != 0 ||
+            len == UIntPtr.Zero ||
+            len > (UIntPtr)1024)
+            return false;
+
+        var buffer = new byte[(int)len];
+        var handle = GCHandle.Alloc(buffer, GCHandleType.Pinned);
+        try
+        {
+            if (sysctlbyname(name, handle.AddrOfPinnedObject(), ref len, IntPtr.Zero, UIntPtr.Zero) != 0 ||
+                len == UIntPtr.Zero)
+                return false;
+
+            var byteLen = (int)len;
+            // sysctl length includes the trailing NUL.
+            if (byteLen > 0 && buffer[byteLen - 1] == 0)
+                byteLen--;
+
+            value = Encoding.UTF8.GetString(buffer, 0, byteLen).Trim();
+            return value.Length > 0;
+        }
+        catch
+        {
+            return false;
+        }
+        finally
+        {
+            if (handle.IsAllocated)
+                handle.Free();
         }
     }
 

@@ -15,21 +15,24 @@ public sealed class OsHostHardwareInfoProvider : IHostHardwareInfoProvider
             var cores = Math.Max(1, Environment.ProcessorCount);
             double mhz;
             double ramMb;
+            string? cpuBrand;
 
             if (OperatingSystem.IsWindows())
             {
-                mhz = TryReadWindowsMaxMhz() ?? 0;
+                TryReadWindowsCpuInfo(out mhz, out cpuBrand);
                 ramMb = TryReadWindowsTotalRamMb() ?? 0;
             }
             else if (OperatingSystem.IsLinux())
             {
                 mhz = TryReadLinuxMaxMhz() ?? 0;
                 ramMb = TryReadLinuxTotalRamMb() ?? 0;
+                cpuBrand = TryReadLinuxCpuBrand();
             }
             else if (OperatingSystem.IsMacOS())
             {
                 mhz = MacOsHostMetrics.TryReadMaxClockMhz() ?? 0;
                 ramMb = MacOsHostMetrics.TryReadTotalRamMb() ?? 0;
+                cpuBrand = MacOsHostMetrics.TryReadCpuBrandString();
             }
             else
             {
@@ -39,7 +42,8 @@ public sealed class OsHostHardwareInfoProvider : IHostHardwareInfoProvider
             if (mhz <= 0 || ramMb <= 0)
                 return Task.FromResult<HostHardwareInfo?>(null);
 
-            return Task.FromResult<HostHardwareInfo?>(new HostHardwareInfo(mhz, cores, ramMb));
+            cpuBrand = NormalizeCpuBrand(cpuBrand);
+            return Task.FromResult<HostHardwareInfo?>(new HostHardwareInfo(mhz, cores, ramMb, cpuBrand));
         }
         catch
         {
@@ -47,24 +51,46 @@ public sealed class OsHostHardwareInfoProvider : IHostHardwareInfoProvider
         }
     }
 
+    private static string? NormalizeCpuBrand(string? cpuBrand) =>
+        !string.IsNullOrWhiteSpace(cpuBrand)
+            ? cpuBrand.Trim()
+            // When brand string is missing, still allow Auto mapping for ARM hosts.
+            : RuntimeInformation.OSArchitecture is Architecture.Arm64 or Architecture.Arm
+                ? "aarch64"
+                : null;
+
+    /// <summary>
+    /// Reads clock and friendly CPU name from the existing CentralProcessor key in one open
+    /// (same source already used for TotalPower MHz). Prefer this over WMI / System.Management.
+    /// Falls back to PROCESSOR_IDENTIFIER when ProcessorNameString is absent.
+    /// </summary>
     [SupportedOSPlatform("windows")]
-    private static double? TryReadWindowsMaxMhz()
+    private static void TryReadWindowsCpuInfo(out double mhz, out string? cpuBrand)
     {
+        mhz = 0;
+        cpuBrand = null;
         try
         {
             using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(
                 @"HARDWARE\DESCRIPTION\System\CentralProcessor\0");
-            var value = key?.GetValue("~MHz");
-            return value switch
+            if (key is null)
+            {
+                cpuBrand = Environment.GetEnvironmentVariable("PROCESSOR_IDENTIFIER");
+                return;
+            }
+
+            mhz = key.GetValue("~MHz") switch
             {
                 int i => i,
                 long l => l,
-                _ => null
+                _ => 0
             };
+            cpuBrand = key.GetValue("ProcessorNameString") as string
+                       ?? Environment.GetEnvironmentVariable("PROCESSOR_IDENTIFIER");
         }
         catch
         {
-            return null;
+            cpuBrand = Environment.GetEnvironmentVariable("PROCESSOR_IDENTIFIER");
         }
     }
 
@@ -111,6 +137,48 @@ public sealed class OsHostHardwareInfoProvider : IHostHardwareInfoProvider
         }
 
         return null;
+    }
+
+    private static string? TryReadLinuxCpuBrand()
+    {
+        try
+        {
+            if (!File.Exists("/proc/cpuinfo"))
+                return null;
+
+            string? modelName = null;
+            string? hardware = null;
+            string? processor = null;
+
+            foreach (var line in File.ReadLines("/proc/cpuinfo"))
+            {
+                var idx = line.IndexOf(':');
+                if (idx < 0)
+                    continue;
+
+                var key = line[..idx].Trim();
+                var value = line[(idx + 1)..].Trim();
+                if (value.Length == 0)
+                    continue;
+
+                if (key.Equals("model name", StringComparison.OrdinalIgnoreCase))
+                {
+                    modelName = value;
+                    break;
+                }
+
+                if (hardware is null && key.Equals("Hardware", StringComparison.OrdinalIgnoreCase))
+                    hardware = value;
+                else if (processor is null && key.Equals("Processor", StringComparison.OrdinalIgnoreCase))
+                    processor = value;
+            }
+
+            return modelName ?? hardware ?? processor;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static double? TryReadLinuxTotalRamMb()
