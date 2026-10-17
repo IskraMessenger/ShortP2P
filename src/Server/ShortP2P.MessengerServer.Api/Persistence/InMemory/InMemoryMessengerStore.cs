@@ -30,5 +30,7 @@ public sealed class InMemoryMessengerStore
 
     public ConcurrentDictionary<string, ClientToBotMessage> ClientToBotMessages { get; } = new(StringComparer.Ordinal);
 
+    public ConcurrentDictionary<string, BotBlacklistEntry> BotBlacklist { get; } = new(StringComparer.Ordinal);
+
     public object ClientToBotGate { get; } = new();
 }

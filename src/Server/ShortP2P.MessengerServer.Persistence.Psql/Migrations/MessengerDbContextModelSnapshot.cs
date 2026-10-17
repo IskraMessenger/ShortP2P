@@ -317,6 +317,64 @@ namespace ShortP2P.MessengerServer.Persistence.Psql.Migrations
 
                     b.ToTable("client_to_bot_messages", (string)null);
                 });
+
+            modelBuilder.Entity("ShortP2P.MessengerServer.Persistence.Psql.Entities.BotBlacklistRecord", b =>
+                {
+                    b.Property<string>("NetworkId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime>("AddedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("NetworkId");
+
+                    b.ToTable("bot_blacklist", (string)null);
+                });
+
+            modelBuilder.Entity("ShortP2P.MessengerServer.Persistence.Psql.Entities.BotAccessLogRecord", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTime>("AtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("BotName")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<string>("Detail")
+                        .IsRequired()
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)");
+
+                    b.Property<string>("NetworkId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Operation")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AtUtc");
+
+                    b.HasIndex("NetworkId");
+
+                    b.ToTable("bot_access_log", (string)null);
+                });
 #pragma warning restore 612, 618
         }
     }

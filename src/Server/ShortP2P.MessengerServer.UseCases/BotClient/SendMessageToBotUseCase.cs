@@ -1,6 +1,7 @@
 using ShortP2P.MessengerServer.Contracts;
 using ShortP2P.MessengerServer.Domain;
 using ShortP2P.MessengerServer.UseCases.Abstractions;
+using ShortP2P.MessengerServer.UseCases.BotBlacklist;
 
 namespace ShortP2P.MessengerServer.UseCases.BotClient;
 
@@ -8,7 +9,8 @@ namespace ShortP2P.MessengerServer.UseCases.BotClient;
 public sealed class SendMessageToBotUseCase(
     IBotAccountRepository bots,
     IClientToBotMessageRepository messages,
-    IClientToBotWaitService wait)
+    IClientToBotWaitService wait,
+    BotBlacklistService blacklist)
 {
     public async Task ExecuteAsync(SendMessageToBotCommand command, CancellationToken cancellationToken = default)
     {
@@ -25,6 +27,9 @@ public sealed class SendMessageToBotUseCase(
         var caller = command.CallerNetworkId.Trim();
         var botNetworkId = command.BotNetworkId.Trim();
         var messageId = command.MessageId.Trim();
+
+        if (await blacklist.ContainsAsync(botNetworkId, cancellationToken).ConfigureAwait(false))
+            throw UseCaseException.Forbidden("Bot is not allowed.");
 
         if (await bots.FindByNetworkIdAsync(botNetworkId, cancellationToken).ConfigureAwait(false) is null)
             throw UseCaseException.NotFound("Bot is not registered.");

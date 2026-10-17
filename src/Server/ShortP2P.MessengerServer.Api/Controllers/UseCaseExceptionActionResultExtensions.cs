@@ -12,6 +12,7 @@ internal static class UseCaseExceptionActionResultExtensions
             {
                 "Validation" => StatusCodes.Status400BadRequest,
                 "Unauthorized" => StatusCodes.Status401Unauthorized,
+                "Forbidden" => StatusCodes.Status403Forbidden,
                 "NotFound" => StatusCodes.Status404NotFound,
                 "Conflict" => StatusCodes.Status409Conflict,
                 "PeerOffline" => StatusCodes.Status409Conflict,

@@ -16,6 +16,8 @@ public sealed class MessengerDbContext(DbContextOptions<MessengerDbContext> opti
     public DbSet<BlobRecord> Blobs => Set<BlobRecord>();
     public DbSet<BotToClientMessageRecord> BotToClientMessages => Set<BotToClientMessageRecord>();
     public DbSet<ClientToBotMessageRecord> ClientToBotMessages => Set<ClientToBotMessageRecord>();
+    public DbSet<BotBlacklistRecord> BotBlacklist => Set<BotBlacklistRecord>();
+    public DbSet<BotAccessLogRecord> BotAccessLogs => Set<BotAccessLogRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -129,6 +131,27 @@ public sealed class MessengerDbContext(DbContextOptions<MessengerDbContext> opti
             e.Property(x => x.CorrelationId).HasMaxLength(32);
             e.HasIndex(x => x.BotNetworkId);
             e.HasIndex(x => x.CreatedUtc);
+        });
+
+        modelBuilder.Entity<BotBlacklistRecord>(e =>
+        {
+            e.ToTable("bot_blacklist");
+            e.HasKey(x => x.NetworkId);
+            e.Property(x => x.NetworkId).HasMaxLength(64);
+        });
+
+        modelBuilder.Entity<BotAccessLogRecord>(e =>
+        {
+            e.ToTable("bot_access_log");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedOnAdd();
+            e.Property(x => x.NetworkId).HasMaxLength(64);
+            e.Property(x => x.BotName).HasMaxLength(256);
+            e.Property(x => x.Operation).HasMaxLength(64);
+            e.Property(x => x.Outcome).HasMaxLength(64);
+            e.Property(x => x.Detail).HasMaxLength(1024);
+            e.HasIndex(x => x.AtUtc);
+            e.HasIndex(x => x.NetworkId);
         });
     }
 }
