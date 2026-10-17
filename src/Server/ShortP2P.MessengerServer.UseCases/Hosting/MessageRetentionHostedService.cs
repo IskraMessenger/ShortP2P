@@ -60,6 +60,14 @@ public sealed class MessageRetentionHostedService(
         if (blobs is not null)
             await blobs.RemoveOlderThanAsync(cutoff, cancellationToken).ConfigureAwait(false);
 
+        var botToClient = scope.ServiceProvider.GetService<IBotToClientMessageRepository>();
+        if (botToClient is not null)
+            await botToClient.RemoveOlderThanAsync(cutoff, cancellationToken).ConfigureAwait(false);
+
+        var clientToBot = scope.ServiceProvider.GetService<IClientToBotMessageRepository>();
+        if (clientToBot is not null)
+            await clientToBot.RemoveOlderThanAsync(cutoff, cancellationToken).ConfigureAwait(false);
+
         logger.LogDebug("Retention purge completed for cutoff {CutoffUtc:o}.", cutoff);
     }
 }

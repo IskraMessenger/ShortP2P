@@ -46,4 +46,13 @@ public static class ApiRoutes
 
     /// <summary>POST claim about another server (UNAVAILABLE / MALFUNCTIONED / WRONGCERT).</summary>
     public const string TrustClaim = Prefix + "/trust/claim";
+
+    /// <summary>POST long-poll encrypted messages from bots to this client (JWT).</summary>
+    public const string BotClientWaitForMessages = Prefix + "/bot_client_interaction/wait_for_messages";
+
+    /// <summary>POST one encrypted client → bot message (JWT).</summary>
+    public const string BotClientSendMessage = Prefix + "/bot_client_interaction/send_message";
+
+    /// <summary>POST client receipt for a bot → client message (JWT); server drops its copy.</summary>
+    public const string BotClientReceipts = Prefix + "/bot_client_interaction/receipts";
 }

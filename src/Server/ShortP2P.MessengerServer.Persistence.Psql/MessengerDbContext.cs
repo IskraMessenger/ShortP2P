@@ -14,6 +14,8 @@ public sealed class MessengerDbContext(DbContextOptions<MessengerDbContext> opti
     public DbSet<MessageInboxRecord> MessageInboxes => Set<MessageInboxRecord>();
     public DbSet<DeliveryTicketRecord> DeliveryTickets => Set<DeliveryTicketRecord>();
     public DbSet<BlobRecord> Blobs => Set<BlobRecord>();
+    public DbSet<BotToClientMessageRecord> BotToClientMessages => Set<BotToClientMessageRecord>();
+    public DbSet<ClientToBotMessageRecord> ClientToBotMessages => Set<ClientToBotMessageRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -102,6 +104,31 @@ public sealed class MessengerDbContext(DbContextOptions<MessengerDbContext> opti
             e.Property(x => x.Ciphertext).HasColumnType("bytea");
             e.HasIndex(x => x.CreatedUtc);
             e.HasIndex(x => x.TgtNetworkId);
+        });
+
+        modelBuilder.Entity<BotToClientMessageRecord>(e =>
+        {
+            e.ToTable("bot_to_client_messages");
+            e.HasKey(x => x.MessageId);
+            e.Property(x => x.MessageId).HasMaxLength(128);
+            e.Property(x => x.BotNetworkId).HasMaxLength(64);
+            e.Property(x => x.ClientNetworkId).HasMaxLength(64);
+            e.Property(x => x.CorrelationId).HasMaxLength(32);
+            e.HasIndex(x => x.ClientNetworkId);
+            e.HasIndex(x => x.BotNetworkId);
+            e.HasIndex(x => x.CreatedUtc);
+        });
+
+        modelBuilder.Entity<ClientToBotMessageRecord>(e =>
+        {
+            e.ToTable("client_to_bot_messages");
+            e.HasKey(x => x.MessageId);
+            e.Property(x => x.MessageId).HasMaxLength(128);
+            e.Property(x => x.ClientNetworkId).HasMaxLength(64);
+            e.Property(x => x.BotNetworkId).HasMaxLength(64);
+            e.Property(x => x.CorrelationId).HasMaxLength(32);
+            e.HasIndex(x => x.BotNetworkId);
+            e.HasIndex(x => x.CreatedUtc);
         });
     }
 }

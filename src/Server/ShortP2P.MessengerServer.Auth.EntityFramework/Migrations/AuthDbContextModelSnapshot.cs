@@ -48,6 +48,48 @@ partial class AuthDbContextModelSnapshot : ModelSnapshot
 
                 b.ToTable("auth_accounts", (string)null);
             });
+
+        modelBuilder.Entity("ShortP2P.MessengerServer.Auth.EntityFramework.Entities.BotAccountEntity", b =>
+            {
+                b.Property<string>("NetworkId")
+                    .HasMaxLength(64)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("BotDescription")
+                    .IsRequired()
+                    .HasMaxLength(500)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("BotName")
+                    .IsRequired()
+                    .HasMaxLength(256)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("BotReadableName")
+                    .IsRequired()
+                    .HasMaxLength(100)
+                    .HasColumnType("TEXT");
+
+                b.Property<DateTime>("CreatedAtUtc")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("KeyHash")
+                    .IsRequired()
+                    .HasMaxLength(256)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("KeySalt")
+                    .IsRequired()
+                    .HasMaxLength(256)
+                    .HasColumnType("TEXT");
+
+                b.HasKey("NetworkId");
+
+                b.HasIndex("BotName")
+                    .IsUnique();
+
+                b.ToTable("bot_accounts", (string)null);
+            });
 #pragma warning restore 612, 618
     }
 }

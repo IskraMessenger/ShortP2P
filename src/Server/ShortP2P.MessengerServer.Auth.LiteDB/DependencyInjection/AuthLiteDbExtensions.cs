@@ -23,6 +23,7 @@ public static class AuthLiteDbExtensions
             throw new InvalidOperationException("Auth:LiteDb:ConnectionString is required.");
 
         builder.Services.AddSingleton<IClientAccountRepository, LiteDbClientAccountRepository>();
+        builder.Services.AddSingleton<IBotAccountRepository, LiteDbBotAccountRepository>();
         return builder;
     }
 }

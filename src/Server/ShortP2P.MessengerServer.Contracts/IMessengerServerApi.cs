@@ -96,4 +96,25 @@ public interface IMessengerServerApi
         int serverPort,
         ServerClaimReason reason,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// POST <see cref="ApiRoutes.BotClientWaitForMessages"/> — long-poll encrypted bot → client messages.
+    /// </summary>
+    Task<BotWaitForMessagesResponse> WaitForBotMessagesAsync(
+        BotWaitForMessagesRequest request,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// POST <see cref="ApiRoutes.BotClientSendMessage"/> — deliver one encrypted client → bot message.
+    /// </summary>
+    Task<BotSendMessageResponse> SendMessageToBotAsync(
+        BotSendMessageRequest request,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// POST <see cref="ApiRoutes.BotClientReceipts"/> — confirm receipt; server drops the bot → client copy.
+    /// </summary>
+    Task SubmitBotMessageReceiptAsync(
+        BotMessageReceiptRequest request,
+        CancellationToken cancellationToken = default);
 }

@@ -186,3 +186,4 @@ public sealed class BlobRecord
         CreatedUtc = blob.CreatedUtc
     };
 }
+

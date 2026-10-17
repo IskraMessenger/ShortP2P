@@ -1,6 +1,8 @@
 using ShortP2P.MessengerServer.Api.HostPowers;
 using ShortP2P.MessengerServer.UseCases.Abstractions;
 using ShortP2P.MessengerServer.UseCases.Auth;
+using ShortP2P.MessengerServer.UseCases.BotClient;
+using ShortP2P.MessengerServer.UseCases.BotServer;
 using ShortP2P.MessengerServer.UseCases.Blobs;
 using ShortP2P.MessengerServer.UseCases.Chats;
 using ShortP2P.MessengerServer.UseCases.Forwards;
@@ -19,6 +21,8 @@ public static class UseCasesServiceCollectionExtensions
     public static IServiceCollection AddMessengerUseCases(this IServiceCollection services)
     {
         services.AddSingleton<IInboxWaitService, InboxWaitService>();
+        services.AddSingleton<IBotToClientWaitService, BotToClientWaitService>();
+        services.AddSingleton<IClientToBotWaitService, ClientToBotWaitService>();
         services.AddSingleton<IForwardHub, InMemoryForwardHub>();
         services.AddSingleton<IHostHardwareInfoProvider, OsHostHardwareInfoProvider>();
         services.AddSingleton<IHostLoadInfoProvider, OsHostLoadInfoProvider>();
@@ -38,6 +42,14 @@ public static class UseCasesServiceCollectionExtensions
         services.AddScoped<DeleteBlobUseCase>();
         services.AddScoped<ForwardPeerProfileUseCase>();
         services.AddScoped<PollInboxEventsUseCase>();
+        services.AddScoped<RegisterBotUseCase>();
+        services.AddScoped<LoginBotUseCase>();
+        services.AddScoped<RemoveBotUseCase>();
+        services.AddScoped<DeliverBotMessagesUseCase>();
+        services.AddScoped<WaitForClientMessagesUseCase>();
+        services.AddScoped<WaitForBotMessagesUseCase>();
+        services.AddScoped<SendMessageToBotUseCase>();
+        services.AddScoped<AcknowledgeBotMessageUseCase>();
         services.AddScoped<GetClientPresencesUseCase>();
         services.AddScoped<GetServerCertificateUseCase>();
         services.AddScoped<AskRatingUseCase>();

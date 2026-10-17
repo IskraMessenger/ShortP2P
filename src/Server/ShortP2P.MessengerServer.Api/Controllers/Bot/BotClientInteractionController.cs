@@ -1,60 +1,125 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using ShortP2P.MessengerServer.Api.Extensions;
 using ShortP2P.MessengerServer.Contracts;
 using ShortP2P.MessengerServer.Contracts.Dtos;
+using ShortP2P.MessengerServer.UseCases;
+using ShortP2P.MessengerServer.UseCases.BotClient;
 
 namespace ShortP2P.MessengerServer.Api.Controllers.Bot;
 
 [ApiController]
+[Authorize]
 [RequireHttps]
 [Route($"{ApiRoutes.Prefix}/bot_client_interaction")]
-public sealed class BotClientInteractionController : ControllerBase
+public sealed class BotClientInteractionController(
+    WaitForBotMessagesUseCase waitForBotMessages,
+    SendMessageToBotUseCase sendMessageToBot,
+    AcknowledgeBotMessageUseCase acknowledgeBotMessage) : ControllerBase
 {
-    /// <summary>
-    /// Long-poll for encrypted messages from bots to this client.
-    /// </summary>
+    /// <summary>Long-poll for encrypted messages from bots to this client.</summary>
     [HttpPost("wait_for_messages")]
-    [AllowAnonymous]
-    public IActionResult WaitForMessages([FromBody] BotWaitForMessagesRequest request)
+    public async Task<IActionResult> WaitForMessages(
+        [FromBody] BotWaitForMessagesRequest request,
+        CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(request.NetworkId))
+        try
         {
-            return BadRequest();
-        }
+            var caller = HttpContext.RequireNetworkId();
+            if (!string.Equals(caller, request.NetworkId?.Trim(), StringComparison.Ordinal))
+                throw UseCaseException.Unauthorized("networkId must match the authenticated client.");
 
-        // Mock: real client auth + inbox long-poll TBD (empty = timed out with nothing queued).
-        return Ok(new BotWaitForMessagesResponse
+            var messages = await waitForBotMessages
+                .ExecuteAsync(new WaitForBotMessagesQuery(caller, request.TimeoutSeconds), cancellationToken)
+                .ConfigureAwait(false);
+
+            return Ok(new BotWaitForMessagesResponse
+            {
+                Messages = messages.Select(m => new BotClientInboundMessageDto
+                {
+                    MessageId = m.MessageId,
+                    BotNetworkId = m.BotNetworkId,
+                    DateTime = m.CreatedUtc,
+                    Message = m.EncryptedMessageBase64,
+                    CorrelationId = m.CorrelationId
+                }).ToArray()
+            });
+        }
+        catch (UseCaseException ex)
         {
-            Messages = []
-        });
+            return this.ToApiErrorResult(ex);
+        }
     }
 
-    /// <summary>
-    /// Deliver one encrypted message from the client to a bot.
-    /// </summary>
+    /// <summary>Deliver one encrypted message from the client to a bot.</summary>
     [HttpPost("send_message")]
-    [AllowAnonymous]
-    public IActionResult SendMessage([FromBody] BotSendMessageRequest request)
+    public async Task<IActionResult> SendMessage(
+        [FromBody] BotSendMessageRequest request,
+        CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(request.MessageId)
-            || string.IsNullOrWhiteSpace(request.NetworkId)
-            || string.IsNullOrWhiteSpace(request.Message)
-            || request.DateTime == default)
+        try
+        {
+            var caller = HttpContext.RequireNetworkId();
+            await sendMessageToBot
+                .ExecuteAsync(
+                    new SendMessageToBotCommand(
+                        caller,
+                        request.MessageId,
+                        request.NetworkId,
+                        request.DateTime,
+                        request.Message,
+                        request.CorrelationId),
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            return Ok(new BotSendMessageResponse
+            {
+                MessageId = request.MessageId,
+                ErrorCode = 0,
+                ErrorMessage = string.Empty
+            });
+        }
+        catch (UseCaseException ex) when (ex.Code is "Validation" or "NotFound")
         {
             return Ok(new BotSendMessageResponse
             {
                 MessageId = request.MessageId ?? string.Empty,
                 ErrorCode = 2,
-                ErrorMessage = "Wrong input"
+                ErrorMessage = ex.Message
             });
         }
-
-        // Mock: real store-and-forward TBD.
-        return Ok(new BotSendMessageResponse
+        catch (UseCaseException ex)
         {
-            MessageId = request.MessageId,
-            ErrorCode = 0,
-            ErrorMessage = string.Empty
-        });
+            return Ok(new BotSendMessageResponse
+            {
+                MessageId = request.MessageId ?? string.Empty,
+                ErrorCode = 1,
+                ErrorMessage = ex.Message
+            });
+        }
+    }
+
+    /// <summary>Delivery receipt. The stored bot → client message is removed.</summary>
+    [HttpPost("receipts")]
+    public async Task<IActionResult> SubmitReceipt(
+        [FromBody] BotMessageReceiptRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var caller = HttpContext.RequireNetworkId();
+            if (request.ReceivedAtUtc == default)
+                throw UseCaseException.Validation("receivedAtUtc is required.");
+
+            await acknowledgeBotMessage
+                .ExecuteAsync(new AcknowledgeBotMessageCommand(caller, request.MessageId), cancellationToken)
+                .ConfigureAwait(false);
+
+            return Accepted();
+        }
+        catch (UseCaseException ex)
+        {
+            return this.ToApiErrorResult(ex);
+        }
     }
 }

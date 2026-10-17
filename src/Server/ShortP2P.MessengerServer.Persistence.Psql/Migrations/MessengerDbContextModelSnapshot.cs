@@ -243,6 +243,80 @@ namespace ShortP2P.MessengerServer.Persistence.Psql.Migrations
 
                     b.ToTable("messages", (string)null);
                 });
+
+            modelBuilder.Entity("ShortP2P.MessengerServer.Persistence.Psql.Entities.BotToClientMessageRecord", b =>
+                {
+                    b.Property<string>("MessageId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("BotNetworkId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("ClientNetworkId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("CorrelationId")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("EncryptedMessageBase64")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("MessageId");
+
+                    b.HasIndex("BotNetworkId");
+
+                    b.HasIndex("ClientNetworkId");
+
+                    b.HasIndex("CreatedUtc");
+
+                    b.ToTable("bot_to_client_messages", (string)null);
+                });
+
+            modelBuilder.Entity("ShortP2P.MessengerServer.Persistence.Psql.Entities.ClientToBotMessageRecord", b =>
+                {
+                    b.Property<string>("MessageId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("BotNetworkId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("ClientNetworkId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("CorrelationId")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("EncryptedMessageBase64")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("MessageId");
+
+                    b.HasIndex("BotNetworkId");
+
+                    b.HasIndex("CreatedUtc");
+
+                    b.ToTable("client_to_bot_messages", (string)null);
+                });
 #pragma warning restore 612, 618
         }
     }
