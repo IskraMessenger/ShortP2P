@@ -23,20 +23,6 @@ public class RegisterClientUseCaseTests
         Assert.Equal(TestIds.DeviceA, status.DeviceId);
     }
 
-    [Theory]
-    [InlineData("", "net", "pw", TestIds.DeviceA)]
-    [InlineData("nick", "", "pw", TestIds.DeviceA)]
-    [InlineData("nick", "net", "", TestIds.DeviceA)]
-    [InlineData("nick", "net", "pw", "short")]
-    public async Task ExecuteAsync_WhenInvalidInput_ThrowsValidation(
-        string nick, string networkId, string password, string deviceId)
-    {
-        var h = new TestHarness();
-        var ex = await Assert.ThrowsAsync<UseCaseException>(() =>
-            h.RegisterClient().ExecuteAsync(new RegisterClientCommand(nick, networkId, password, deviceId)));
-        Assert.Equal("Validation", ex.Code);
-    }
-
     [Fact]
     public async Task ExecuteAsync_WhenNetworkIdTaken_ThrowsConflict()
     {

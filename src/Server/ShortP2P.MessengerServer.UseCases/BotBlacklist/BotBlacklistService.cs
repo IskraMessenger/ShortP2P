@@ -70,11 +70,5 @@ public sealed class BotBlacklistService(
             await repository.RemoveAsync(id, cancellationToken).ConfigureAwait(false);
     }
 
-    private static string RequireNetworkId(string? networkId)
-    {
-        if (string.IsNullOrWhiteSpace(networkId))
-            throw UseCaseException.Validation("NetworkId is required.");
-
-        return networkId.Trim();
-    }
+    private static string RequireNetworkId(string? networkId) => networkId?.Trim() ?? "";
 }

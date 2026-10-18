@@ -22,11 +22,6 @@ public sealed class SubmitDeliveryReceiptUseCase(
         SubmitDeliveryReceiptCommand command,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(command.CallerNetworkId) ||
-            string.IsNullOrWhiteSpace(command.MessageId) ||
-            string.IsNullOrWhiteSpace(command.DeviceId))
-            throw UseCaseException.Validation("CallerNetworkId, deviceId and messageId are required.");
-
         StorageAccess.EnsureAnyStoreEnabled(options);
 
         var caller = command.CallerNetworkId.Trim();

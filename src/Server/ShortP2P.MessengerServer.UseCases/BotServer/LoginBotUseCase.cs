@@ -4,11 +4,12 @@ using ShortP2P.MessengerServer.UseCases.BotBlacklist;
 
 namespace ShortP2P.MessengerServer.UseCases.BotServer;
 
-/// <summary>Issues a client-style token after the bot key and bot name match the stored account.</summary>
+/// <summary>Issues a client-style token after the bot key, name and certificate fingerprint match.</summary>
 public sealed class LoginBotUseCase(
     IBotAccountRepository accounts,
     IPasswordHasher passwordHasher,
     IAuthTokenService tokenService,
+    IServerCertificateReader serverCertificate,
     BotBlacklistGuard blacklistGuard,
     BotAccessLogService accessLog)
 {
@@ -21,6 +22,8 @@ public sealed class LoginBotUseCase(
     {
         try
         {
+            var fingerprint = CertificateFingerprintRules.Normalize(command.FingerprintSha256);
+
             await blacklistGuard
                 .EnsureAllowedAsync(command.NetworkId, BotAccessOperations.Login, cancellationToken)
                 .ConfigureAwait(false);
@@ -34,7 +37,11 @@ public sealed class LoginBotUseCase(
                 requireBotName: true,
                 cancellationToken).ConfigureAwait(false);
 
+            if (!CertificateFingerprintRules.AreEqual(account.CertificateFingerprintSha256, fingerprint))
+                throw UseCaseException.Unauthorized("Invalid bot credentials.");
+
             var token = tokenService.IssueToken(account.NetworkId, BotDeviceId);
+            var serverCert = await serverCertificate.GetAsync(cancellationToken).ConfigureAwait(false);
 
             await accessLog
                 .WriteAsync(
@@ -46,7 +53,7 @@ public sealed class LoginBotUseCase(
                     cancellationToken)
                 .ConfigureAwait(false);
 
-            return new LoginBotResult(token.Token, token.ExpiresAtUtc);
+            return new LoginBotResult(token.Token, token.ExpiresAtUtc, serverCert.FingerprintSha256);
         }
         catch (UseCaseException ex)
         {

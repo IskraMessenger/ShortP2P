@@ -32,6 +32,7 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options) : DbC
             e.Property(x => x.BotDescription).HasMaxLength(500);
             e.Property(x => x.KeySalt).HasMaxLength(256);
             e.Property(x => x.KeyHash).HasMaxLength(256);
+            e.Property(x => x.CertificateFingerprintSha256).HasMaxLength(64);
         });
     }
 }

@@ -78,6 +78,7 @@ public class BotClientInteractionUseCaseTests
             BotDescription = "test",
             KeySalt = "s",
             KeyHash = "h",
+            CertificateFingerprintSha256 = new string('a', 64),
             CreatedAtUtc = T0
         });
 
@@ -112,6 +113,7 @@ public class BotClientInteractionUseCaseTests
             BotDescription = "test",
             KeySalt = "s",
             KeyHash = "h",
+            CertificateFingerprintSha256 = new string('a', 64),
             CreatedAtUtc = T0
         });
         await h.Blacklist.AddAsync("bot");
@@ -132,58 +134,6 @@ public class BotClientInteractionUseCaseTests
         var result = await h.Wait().ExecuteAsync(new WaitForBotMessagesQuery("client", 1));
         Assert.Empty(result);
         Assert.Null(await h.ToClient.FindByIdAsync("m1"));
-    }
-
-    [Fact]
-    public async Task Send_WhenCorrelationTooLong_ThrowsValidation()
-    {
-        var h = new Harness();
-        h.Bots.Add(new BotAccount
-        {
-            NetworkId = "bot",
-            BotName = "echo",
-            BotReadableName = "Echo",
-            BotDescription = "test",
-            KeySalt = "s",
-            KeyHash = "h",
-            CreatedAtUtc = T0
-        });
-
-        var ex = await Assert.ThrowsAsync<UseCaseException>(() =>
-            h.Send().ExecuteAsync(new SendMessageToBotCommand(
-                "client", "mid", "bot", T0, Cipher, new string('x', 33))));
-        Assert.Equal("Validation", ex.Code);
-    }
-
-    [Fact]
-    public async Task Send_WhenCiphertextNotBase64_ThrowsValidation()
-    {
-        var h = new Harness();
-        h.Bots.Add(new BotAccount
-        {
-            NetworkId = "bot",
-            BotName = "echo",
-            BotReadableName = "Echo",
-            BotDescription = "test",
-            KeySalt = "s",
-            KeyHash = "h",
-            CreatedAtUtc = T0
-        });
-
-        var ex = await Assert.ThrowsAsync<UseCaseException>(() =>
-            h.Send().ExecuteAsync(new SendMessageToBotCommand(
-                "client", "mid", "bot", T0, "not-valid-base64!!!", null)));
-        Assert.Equal("Validation", ex.Code);
-    }
-
-    [Fact]
-    public async Task Send_WhenNetworkIdHasInjectionChars_ThrowsValidation()
-    {
-        var h = new Harness();
-        var ex = await Assert.ThrowsAsync<UseCaseException>(() =>
-            h.Send().ExecuteAsync(new SendMessageToBotCommand(
-                "client'; drop", "mid", "bot", T0, Cipher, null)));
-        Assert.Equal("Validation", ex.Code);
     }
 
     private static BotToClientMessage Sample(string id) => new()

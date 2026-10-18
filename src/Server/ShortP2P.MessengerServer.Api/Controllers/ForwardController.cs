@@ -24,9 +24,6 @@ public sealed class ForwardController(
     {
         try
         {
-            if (request is null)
-                throw UseCaseException.Validation("Request body is required.");
-
             var caller = HttpContext.RequireNetworkId();
             if (!string.Equals(request.SrcNetworkId?.Trim(), caller, StringComparison.Ordinal))
                 throw UseCaseException.Unauthorized("srcNetworkId must match the authenticated client.");

@@ -5,4 +5,5 @@ public sealed record RegisterBotResult(
     string BotName,
     string BotReadableName,
     string BotDescription,
-    string BotKey);
+    string BotKey,
+    string ServerFingerprintSha256);

@@ -31,7 +31,8 @@ public sealed class BotServerInteractionController(
                     request.NetworkId,
                     request.BotName,
                     request.BotReadableName,
-                    request.BotDescription),
+                    request.BotDescription,
+                    request.FingerprintSha256),
                 cancellationToken).ConfigureAwait(false);
 
             return StatusCode(StatusCodes.Status201Created, new BotRegisterResponse
@@ -40,7 +41,8 @@ public sealed class BotServerInteractionController(
                 BotName = result.BotName,
                 BotReadableName = result.BotReadableName,
                 BotDescription = result.BotDescription,
-                BotKey = result.BotKey
+                BotKey = result.BotKey,
+                ServerFingerprintSha256 = result.ServerFingerprintSha256
             });
         }
         catch (UseCaseException ex)
@@ -59,13 +61,18 @@ public sealed class BotServerInteractionController(
         try
         {
             var result = await loginBot.ExecuteAsync(
-                new LoginBotCommand(request.NetworkId, request.BotName, request.BotKey),
+                new LoginBotCommand(
+                    request.NetworkId,
+                    request.BotName,
+                    request.BotKey,
+                    request.FingerprintSha256),
                 cancellationToken).ConfigureAwait(false);
 
             return Ok(new BotLoginResponse
             {
                 Token = result.Token,
-                ExpiresAtUtc = result.ExpiresAtUtc
+                ExpiresAtUtc = result.ExpiresAtUtc,
+                ServerFingerprintSha256 = result.ServerFingerprintSha256
             });
         }
         catch (UseCaseException ex)
@@ -108,10 +115,7 @@ public sealed class BotServerInteractionController(
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(request.RequestId))
-                throw UseCaseException.Validation("requestId is required.");
-
-            var messages = (request.Messages ?? [])
+            var messages = request.Messages
                 .Select(m => new DeliverBotMessageItem(m.NetworkId, m.EncryptedMessageBase64, m.CorrelationId))
                 .ToArray();
 
@@ -136,9 +140,6 @@ public sealed class BotServerInteractionController(
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(request.RequestId))
-                throw UseCaseException.Validation("requestId is required.");
-
             var messages = await waitForClientMessages.ExecuteAsync(
                 new WaitForClientMessagesQuery(request.BotNetworkId, request.BotKey, request.TimeoutSeconds),
                 cancellationToken).ConfigureAwait(false);

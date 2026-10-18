@@ -17,14 +17,9 @@ public sealed class WaitForBotMessagesUseCase(
         WaitForBotMessagesQuery query,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(query.CallerNetworkId))
-            throw UseCaseException.Validation("NetworkId is required.");
-
         var caller = query.CallerNetworkId.Trim();
         var opts = inboxOptions.Value;
         var timeoutSeconds = query.TimeoutSeconds ?? opts.MaxPollTimeoutSeconds;
-        if (timeoutSeconds < 1 || timeoutSeconds > opts.MaxPollTimeoutSeconds)
-            throw UseCaseException.Validation($"timeoutSeconds must be between 1 and {opts.MaxPollTimeoutSeconds}.");
 
         var pending = await ListFreshAsync(caller, cancellationToken).ConfigureAwait(false);
         if (pending.Count > 0)

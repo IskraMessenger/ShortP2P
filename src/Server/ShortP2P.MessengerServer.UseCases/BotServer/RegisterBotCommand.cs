@@ -4,4 +4,5 @@ public sealed record RegisterBotCommand(
     string NetworkId,
     string BotName,
     string BotReadableName,
-    string BotDescription);
+    string BotDescription,
+    string FingerprintSha256);

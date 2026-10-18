@@ -90,15 +90,6 @@ public class ForwardPeerProfileUseCaseTests
         Assert.Equal("Validation", ex.Code);
     }
 
-    [Fact]
-    public async Task ExecuteAsync_WhenInvalidBase64_ThrowsValidation()
-    {
-        var h = new TestHarness();
-        var ex = await Assert.ThrowsAsync<UseCaseException>(() =>
-            h.ForwardPeerProfile().ExecuteAsync(new ForwardPeerProfileCommand(
-                "fwd-1", "alice", "bob", ForwardKind.PeerProfileRequest, "%%%", "s")));
-        Assert.Equal("Validation", ex.Code);
-    }
 }
 
 public class PeerProfileForwardPayloadInspectorTests

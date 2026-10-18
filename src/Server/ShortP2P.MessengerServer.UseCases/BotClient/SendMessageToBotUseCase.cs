@@ -1,4 +1,3 @@
-using ShortP2P.MessengerServer.Contracts;
 using ShortP2P.MessengerServer.Domain;
 using ShortP2P.MessengerServer.UseCases.Abstractions;
 using ShortP2P.MessengerServer.UseCases.BotBlacklist;
@@ -14,15 +13,13 @@ public sealed class SendMessageToBotUseCase(
 {
     public async Task ExecuteAsync(SendMessageToBotCommand command, CancellationToken cancellationToken = default)
     {
-        if (command.DateTime == default)
-            throw UseCaseException.Validation("MessageId, networkId, dateTime and message are required.");
-
-        var caller = InputGuard.NetworkId(command.CallerNetworkId, "callerNetworkId");
-        var botNetworkId = InputGuard.NetworkId(command.BotNetworkId, "botNetworkId");
-        var messageId = InputGuard.MessageId(command.MessageId);
-        var correlationId = InputGuard.CorrelationId(command.CorrelationId);
-        var ciphertext = InputGuard.CiphertextBase64(
-            command.Message, MessageLimits.MaxCiphertextBytes, "message");
+        var caller = command.CallerNetworkId.Trim();
+        var botNetworkId = command.BotNetworkId.Trim();
+        var messageId = command.MessageId.Trim();
+        var correlationId = string.IsNullOrWhiteSpace(command.CorrelationId)
+            ? null
+            : command.CorrelationId.Trim();
+        var ciphertext = command.Message.Trim();
 
         if (await blacklist.ContainsAsync(botNetworkId, cancellationToken).ConfigureAwait(false))
             throw UseCaseException.Forbidden("Bot is not allowed.");

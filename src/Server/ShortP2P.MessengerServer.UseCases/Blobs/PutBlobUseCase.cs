@@ -13,9 +13,9 @@ public sealed class PutBlobUseCase(IBlobRepository blobs, IClock clock)
     {
         ArgumentNullException.ThrowIfNull(command);
 
-        var blobId = InputGuard.BlobId(command.BlobId);
-        var src = InputGuard.NetworkId(command.SrcNetworkId, "srcNetworkId");
-        var tgt = InputGuard.NetworkId(command.TgtNetworkId, "tgtNetworkId");
+        var blobId = command.BlobId.Trim();
+        var src = command.SrcNetworkId.Trim();
+        var tgt = command.TgtNetworkId.Trim();
         var ciphertext = command.Ciphertext ?? [];
 
         if (ciphertext.Length == 0)

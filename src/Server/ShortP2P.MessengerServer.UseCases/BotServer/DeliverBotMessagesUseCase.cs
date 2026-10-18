@@ -1,4 +1,3 @@
-using ShortP2P.MessengerServer.Contracts;
 using ShortP2P.MessengerServer.Domain;
 using ShortP2P.MessengerServer.UseCases.Abstractions;
 using ShortP2P.MessengerServer.UseCases.BotBlacklist;
@@ -39,27 +38,21 @@ public sealed class DeliverBotMessagesUseCase(
             .EnsureAllowedAsync(account.NetworkId, cancellationToken)
             .ConfigureAwait(false);
 
-        if (command.Messages is not { Count: > 0 })
-            throw UseCaseException.Validation("Messages are required.");
-
         var pending = new List<BotToClientMessage>(command.Messages.Count);
         foreach (var item in command.Messages)
         {
-            if (item is null)
-                throw UseCaseException.Validation("Client network id and encrypted message are required.");
-
-            var clientNetworkId = InputGuard.NetworkId(item.ClientNetworkId, "clientNetworkId");
-            var ciphertext = InputGuard.CiphertextBase64(
-                item.EncryptedMessageBase64, MessageLimits.MaxCiphertextBytes, "encryptedMessage");
+            var correlation = string.IsNullOrWhiteSpace(item.CorrelationId)
+                ? null
+                : item.CorrelationId.Trim();
 
             pending.Add(new BotToClientMessage
             {
                 MessageId = Guid.NewGuid().ToString("N"),
                 BotNetworkId = account.NetworkId,
-                ClientNetworkId = clientNetworkId,
+                ClientNetworkId = item.ClientNetworkId.Trim(),
                 CreatedUtc = clock.UtcNow,
-                EncryptedMessageBase64 = ciphertext,
-                CorrelationId = InputGuard.CorrelationId(item.CorrelationId)
+                EncryptedMessageBase64 = item.EncryptedMessageBase64.Trim(),
+                CorrelationId = correlation
             });
         }
 

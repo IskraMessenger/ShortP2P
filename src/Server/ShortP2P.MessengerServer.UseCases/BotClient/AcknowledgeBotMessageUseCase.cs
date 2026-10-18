@@ -9,9 +9,6 @@ public sealed class AcknowledgeBotMessageUseCase(IBotToClientMessageRepository m
         AcknowledgeBotMessageCommand command,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(command.CallerNetworkId) || string.IsNullOrWhiteSpace(command.MessageId))
-            throw UseCaseException.Validation("NetworkId and messageId are required.");
-
         var caller = command.CallerNetworkId.Trim();
         var messageId = command.MessageId.Trim();
         var message = await messages.FindByIdAsync(messageId, cancellationToken).ConfigureAwait(false);

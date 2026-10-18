@@ -30,19 +30,10 @@ public sealed class PollInboxEventsUseCase(
         PollInboxEventsQuery query,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(query.CallerNetworkId) || string.IsNullOrWhiteSpace(query.DeviceId))
-            throw UseCaseException.Validation("CallerNetworkId and deviceId are required.");
-
-        if (!DeviceIdRules.IsValid(query.DeviceId.Trim()))
-            throw UseCaseException.Validation("DeviceId must be 64 lowercase hex characters (SHA-256).");
-
         var caller = query.CallerNetworkId.Trim();
         var deviceId = query.DeviceId.Trim();
         var opts = inboxOptions.Value;
         var timeoutSeconds = query.TimeoutSeconds ?? opts.MaxPollTimeoutSeconds;
-        if (timeoutSeconds < 1 || timeoutSeconds > opts.MaxPollTimeoutSeconds)
-            throw UseCaseException.Validation($"timeoutSeconds must be between 1 and {opts.MaxPollTimeoutSeconds}.");
-
         var cutoff = clock.UtcNow - opts.MessageRetention;
 
         var snapshot = await ReadInboxAsync(caller, deviceId, cutoff, cancellationToken).ConfigureAwait(false);

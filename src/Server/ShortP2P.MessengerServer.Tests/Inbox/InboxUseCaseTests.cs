@@ -45,23 +45,6 @@ public class PollInboxEventsUseCaseTests
         Assert.Empty(result.Forwards);
     }
 
-    [Fact]
-    public async Task ExecuteAsync_WhenTimeoutOutOfRange_ThrowsValidation()
-    {
-        var h = new TestHarness();
-        var ex = await Assert.ThrowsAsync<UseCaseException>(() =>
-            h.PollInbox().ExecuteAsync(new PollInboxEventsQuery("bob", TestIds.DeviceB, 999)));
-        Assert.Equal("Validation", ex.Code);
-    }
-
-    [Fact]
-    public async Task ExecuteAsync_WhenDeviceIdInvalid_ThrowsValidation()
-    {
-        var h = new TestHarness();
-        var ex = await Assert.ThrowsAsync<UseCaseException>(() =>
-            h.PollInbox().ExecuteAsync(new PollInboxEventsQuery("bob", "bad", 1)));
-        Assert.Equal("Validation", ex.Code);
-    }
 }
 
 public class DeviceFanoutServiceTests

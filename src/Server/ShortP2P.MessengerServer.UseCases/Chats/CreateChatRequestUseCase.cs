@@ -14,13 +14,6 @@ public sealed class CreateChatRequestUseCase(
 {
     public async Task ExecuteAsync(CreateChatRequestCommand command, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(command.CallerNetworkId) ||
-            string.IsNullOrWhiteSpace(command.PublicKey) ||
-            string.IsNullOrWhiteSpace(command.TargetNetworkId))
-        {
-            throw UseCaseException.Validation("CallerNetworkId, publicKey and targetNetworkId are required.");
-        }
-
         var caller = command.CallerNetworkId.Trim();
         var target = command.TargetNetworkId.Trim();
         if (string.Equals(caller, target, StringComparison.Ordinal))

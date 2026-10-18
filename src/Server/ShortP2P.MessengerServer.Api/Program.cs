@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
 using ShortP2P.MessengerServer.Api.DependencyInjection;
 using ShortP2P.MessengerServer.Api.Filters;
+using ShortP2P.MessengerServer.Api.Validation;
 using ShortP2P.MessengerServer.Auth.DependencyInjection;
 using ShortP2P.MessengerServer.Auth.LiteDB.DependencyInjection;
 using ShortP2P.MessengerServer.Contracts;
@@ -39,11 +40,13 @@ builder.Services
 
 builder.Services.AddServerCertificateReader();
 builder.Services.AddMessengerUseCases();
+builder.Services.AddMessengerFluentValidation();
 builder.Services.AddMessengerSwagger();
 builder.Services.AddScoped<PresenceTouchFilter>();
 builder.Services.AddSingleton<JsonBodyContentTypeFilter>();
 builder.Services.AddControllers(options =>
 {
+    options.Filters.AddService<FluentValidationFilter>();
     options.Filters.AddService<PresenceTouchFilter>();
     options.Filters.AddService<JsonBodyContentTypeFilter>();
 }).AddJsonOptions(o =>

@@ -1,4 +1,3 @@
-using ShortP2P.MessengerServer.Contracts;
 using ShortP2P.MessengerServer.Domain;
 using ShortP2P.MessengerServer.UseCases.Abstractions;
 using ShortP2P.MessengerServer.UseCases.BotBlacklist;
@@ -11,6 +10,7 @@ public sealed class RegisterBotUseCase(
     IBotKeyGenerator keyGenerator,
     IPasswordHasher passwordHasher,
     IClock clock,
+    IServerCertificateReader serverCertificate,
     BotBlacklistGuard blacklistGuard,
     BotAccessLogService accessLog)
 {
@@ -20,12 +20,11 @@ public sealed class RegisterBotUseCase(
     {
         try
         {
-            var networkId = InputGuard.NetworkId(command.NetworkId);
-            var botName = InputGuard.Cleartext(command.BotName, BotLimits.MaxBotNameLength, "botName");
-            var botReadableName = InputGuard.Cleartext(
-                command.BotReadableName, BotLimits.MaxBotReadableNameLength, "botReadableName");
-            var botDescription = InputGuard.Cleartext(
-                command.BotDescription, BotLimits.MaxBotDescriptionLength, "botDescription");
+            var networkId = command.NetworkId.Trim();
+            var botName = command.BotName.Trim();
+            var botReadableName = command.BotReadableName.Trim();
+            var botDescription = command.BotDescription.Trim();
+            var fingerprint = CertificateFingerprintRules.Normalize(command.FingerprintSha256);
 
             await blacklistGuard
                 .EnsureAllowedAsync(networkId, BotAccessOperations.Register, cancellationToken)
@@ -51,6 +50,7 @@ public sealed class RegisterBotUseCase(
                         BotDescription = botDescription,
                         KeySalt = hashed.Salt,
                         KeyHash = hashed.Hash,
+                        CertificateFingerprintSha256 = fingerprint,
                         CreatedAtUtc = clock.UtcNow
                     },
                     cancellationToken).ConfigureAwait(false);
@@ -59,6 +59,8 @@ public sealed class RegisterBotUseCase(
             {
                 throw UseCaseException.Conflict("NetworkId or botName is already registered.");
             }
+
+            var serverCert = await serverCertificate.GetAsync(cancellationToken).ConfigureAwait(false);
 
             await accessLog
                 .WriteAsync(
@@ -70,7 +72,13 @@ public sealed class RegisterBotUseCase(
                     cancellationToken)
                 .ConfigureAwait(false);
 
-            return new RegisterBotResult(networkId, botName, botReadableName, botDescription, botKey);
+            return new RegisterBotResult(
+                networkId,
+                botName,
+                botReadableName,
+                botDescription,
+                botKey,
+                serverCert.FingerprintSha256);
         }
         catch (UseCaseException ex)
         {
