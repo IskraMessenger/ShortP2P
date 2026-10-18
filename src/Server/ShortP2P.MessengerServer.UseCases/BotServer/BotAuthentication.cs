@@ -1,4 +1,3 @@
-using ShortP2P.MessengerServer.Contracts;
 using ShortP2P.MessengerServer.Domain;
 using ShortP2P.MessengerServer.UseCases.Abstractions;
 
@@ -6,6 +5,7 @@ namespace ShortP2P.MessengerServer.UseCases.BotServer;
 
 /// <summary>
 /// Shared bot-key check. Failures share one message so callers cannot tell which part missed.
+/// Input shape is validated at the API via FluentValidation.
 /// </summary>
 internal static class BotAuthentication
 {
@@ -18,29 +18,19 @@ internal static class BotAuthentication
         bool requireBotName,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(networkId)
-            || string.IsNullOrWhiteSpace(botKey)
-            || (requireBotName && string.IsNullOrWhiteSpace(botName)))
-        {
-            throw UseCaseException.Validation(
-                requireBotName
-                    ? "NetworkId, botName and botKey are required."
-                    : "NetworkId and botKey are required.");
-        }
-
-        var key = botKey.Trim();
-        if (key.Length != BotLimits.BotKeyLength)
-            throw UseCaseException.Validation($"botKey must be {BotLimits.BotKeyLength} characters.");
+        var id = networkId?.Trim() ?? "";
+        var key = botKey?.Trim() ?? "";
+        var name = botName?.Trim() ?? "";
 
         var account = await accounts
-            .FindByNetworkIdAsync(networkId.Trim(), cancellationToken)
+            .FindByNetworkIdAsync(id, cancellationToken)
             .ConfigureAwait(false);
         if (account is null)
             throw UseCaseException.Unauthorized("Invalid bot credentials.");
 
         var keyMatches = passwordHasher.Verify(key, account.KeySalt, account.KeyHash);
         var nameMatches = !requireBotName
-            || string.Equals(account.BotName, botName!.Trim(), StringComparison.Ordinal);
+            || string.Equals(account.BotName, name, StringComparison.Ordinal);
         if (!keyMatches || !nameMatches)
             throw UseCaseException.Unauthorized("Invalid bot credentials.");
 

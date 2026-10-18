@@ -43,14 +43,4 @@ public class LoginClientUseCaseTests
         Assert.Equal("Unauthorized", ex.Code);
     }
 
-    [Fact]
-    public async Task ExecuteAsync_WhenDeviceIdInvalid_ThrowsValidation()
-    {
-        var h = new TestHarness();
-        await h.RegisterClient().ExecuteAsync(new RegisterClientCommand("Alice", "net-a", "secret", TestIds.DeviceA));
-
-        var ex = await Assert.ThrowsAsync<UseCaseException>(() =>
-            h.LoginClient().ExecuteAsync(new LoginClientCommand("net-a", "secret", "bad")));
-        Assert.Equal("Validation", ex.Code);
-    }
 }

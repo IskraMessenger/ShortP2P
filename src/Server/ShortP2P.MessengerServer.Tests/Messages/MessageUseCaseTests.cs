@@ -66,24 +66,6 @@ public class SendMessageUseCaseTests
     }
 
     [Fact]
-    public async Task ExecuteAsync_WhenFieldsMissing_ThrowsValidation()
-    {
-        var h = new TestHarness();
-        var ex = await Assert.ThrowsAsync<UseCaseException>(() =>
-            h.SendMessage().ExecuteAsync(new SendMessageCommand(
-                new Message
-                {
-                    MessageId = "",
-                    SrcNetworkId = "a",
-                    TgtNetworkId = "b",
-                    CreatedUtc = TestHarness.T0,
-                    UpdatedUtc = TestHarness.T0,
-                    EncryptedDataBase64 = "x"
-                })));
-        Assert.Equal("Validation", ex.Code);
-    }
-
-    [Fact]
     public async Task ExecuteAsync_WhenCacheOnly_WritesOnlyCache()
     {
         var h = new TestHarness();

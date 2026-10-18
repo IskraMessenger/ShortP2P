@@ -40,16 +40,6 @@ public class RegisterLoginBotUseCaseTests
     }
 
     [Fact]
-    public async Task Register_WhenFingerprintInvalid_ThrowsValidation()
-    {
-        var h = new Harness();
-        var ex = await Assert.ThrowsAsync<UseCaseException>(() =>
-            h.Register().ExecuteAsync(new RegisterBotCommand(
-                "bot-net", "echo", "Echo Bot", "desc", "short")));
-        Assert.Equal("Validation", ex.Code);
-    }
-
-    [Fact]
     public async Task Login_WhenFingerprintMatches_ReturnsTokenAndServerFingerprint()
     {
         var h = new Harness();

@@ -1,4 +1,3 @@
-using ShortP2P.MessengerServer.Contracts;
 using ShortP2P.MessengerServer.Domain;
 using ShortP2P.MessengerServer.UseCases.Abstractions;
 using ShortP2P.MessengerServer.UseCases.Inbox;
@@ -18,13 +17,12 @@ public sealed class SendMessageUseCase(
 
         var message = new Message
         {
-            MessageId = InputGuard.MessageId(raw.MessageId),
-            SrcNetworkId = InputGuard.NetworkId(raw.SrcNetworkId, "srcNetworkId"),
-            TgtNetworkId = InputGuard.NetworkId(raw.TgtNetworkId, "tgtNetworkId"),
+            MessageId = raw.MessageId.Trim(),
+            SrcNetworkId = raw.SrcNetworkId.Trim(),
+            TgtNetworkId = raw.TgtNetworkId.Trim(),
             CreatedUtc = raw.CreatedUtc,
             UpdatedUtc = raw.UpdatedUtc,
-            EncryptedDataBase64 = InputGuard.CiphertextBase64(
-                raw.EncryptedDataBase64, MessageLimits.MaxCiphertextBytes, "encryptedDataBase64")
+            EncryptedDataBase64 = raw.EncryptedDataBase64.Trim()
         };
 
         StorageAccess.EnsureAnyStoreEnabled(options);

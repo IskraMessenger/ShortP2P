@@ -1,4 +1,3 @@
-using ShortP2P.MessengerServer.Contracts;
 using ShortP2P.MessengerServer.Domain;
 using ShortP2P.MessengerServer.UseCases.Abstractions;
 using ShortP2P.MessengerServer.UseCases.BotBlacklist;
@@ -21,13 +20,11 @@ public sealed class RegisterBotUseCase(
     {
         try
         {
-            var networkId = InputGuard.NetworkId(command.NetworkId);
-            var botName = InputGuard.Cleartext(command.BotName, BotLimits.MaxBotNameLength, "botName");
-            var botReadableName = InputGuard.Cleartext(
-                command.BotReadableName, BotLimits.MaxBotReadableNameLength, "botReadableName");
-            var botDescription = InputGuard.Cleartext(
-                command.BotDescription, BotLimits.MaxBotDescriptionLength, "botDescription");
-            var fingerprint = InputGuard.CertificateFingerprintSha256(command.FingerprintSha256);
+            var networkId = command.NetworkId.Trim();
+            var botName = command.BotName.Trim();
+            var botReadableName = command.BotReadableName.Trim();
+            var botDescription = command.BotDescription.Trim();
+            var fingerprint = CertificateFingerprintRules.Normalize(command.FingerprintSha256);
 
             await blacklistGuard
                 .EnsureAllowedAsync(networkId, BotAccessOperations.Register, cancellationToken)

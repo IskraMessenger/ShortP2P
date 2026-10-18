@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using ShortP2P.MessengerServer.Api.Extensions;
+using ShortP2P.MessengerServer.Api.Validation;
+using ShortP2P.MessengerServer.Api.Validation.Models;
 using ShortP2P.MessengerServer.Contracts;
 using ShortP2P.MessengerServer.Contracts.Dtos;
 using ShortP2P.MessengerServer.UseCases;
@@ -61,9 +63,16 @@ public sealed class BotsController(
     {
         try
         {
+            await ValidationGate
+                .EnsureValidAsync(
+                    HttpContext.RequestServices,
+                    new BlacklistNetworkIdArgument(networkId),
+                    cancellationToken)
+                .ConfigureAwait(false);
+
             _ = HttpContext.RequireNetworkId();
             await removeBotFromBlacklist
-                .ExecuteAsync(new RemoveBotFromBlacklistCommand(networkId), cancellationToken)
+                .ExecuteAsync(new RemoveBotFromBlacklistCommand(networkId.Trim()), cancellationToken)
                 .ConfigureAwait(false);
             return NoContent();
         }

@@ -22,7 +22,7 @@ public sealed class LoginBotUseCase(
     {
         try
         {
-            var fingerprint = InputGuard.CertificateFingerprintSha256(command.FingerprintSha256);
+            var fingerprint = CertificateFingerprintRules.Normalize(command.FingerprintSha256);
 
             await blacklistGuard
                 .EnsureAllowedAsync(command.NetworkId, BotAccessOperations.Login, cancellationToken)

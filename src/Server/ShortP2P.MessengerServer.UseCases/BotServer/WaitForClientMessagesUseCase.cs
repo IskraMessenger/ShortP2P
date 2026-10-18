@@ -36,8 +36,6 @@ public sealed class WaitForClientMessagesUseCase(
 
         var opts = inboxOptions.Value;
         var timeoutSeconds = query.TimeoutSeconds ?? opts.MaxPollTimeoutSeconds;
-        if (timeoutSeconds < 1 || timeoutSeconds > opts.MaxPollTimeoutSeconds)
-            throw UseCaseException.Validation($"timeoutSeconds must be between 1 and {opts.MaxPollTimeoutSeconds}.");
 
         var taken = await messages.TakeForBotAsync(account.NetworkId, cancellationToken).ConfigureAwait(false);
         var pending = FilterExpired(taken);

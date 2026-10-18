@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using ShortP2P.MessengerServer.Api.Extensions;
+using ShortP2P.MessengerServer.Api.Validation;
+using ShortP2P.MessengerServer.Api.Validation.Models;
 using ShortP2P.MessengerServer.Contracts;
 using ShortP2P.MessengerServer.Contracts.Dtos;
 using ShortP2P.MessengerServer.UseCases;
@@ -22,6 +24,13 @@ public sealed class EventsController(PollInboxEventsUseCase pollInboxEventsUseCa
         {
             var caller = HttpContext.RequireNetworkId();
             var deviceId = HttpContext.RequireDeviceId();
+            await ValidationGate
+                .EnsureValidAsync(
+                    HttpContext.RequestServices,
+                    new EventsPollArguments(deviceId, timeoutSeconds),
+                    cancellationToken)
+                .ConfigureAwait(false);
+
             var result = await pollInboxEventsUseCase
                 .ExecuteAsync(new PollInboxEventsQuery(caller, deviceId, timeoutSeconds), cancellationToken)
                 .ConfigureAwait(false);

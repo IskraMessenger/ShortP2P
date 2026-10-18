@@ -18,14 +18,9 @@ public sealed class LoginClientUseCase(
         LoginClientCommand command,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(command.NetworkId) || string.IsNullOrWhiteSpace(command.Password))
-            throw UseCaseException.Validation("NetworkId and password are required.");
-
-        var deviceId = command.DeviceId?.Trim();
-        if (!DeviceIdRules.IsValid(deviceId))
-            throw UseCaseException.Validation("DeviceId must be 64 lowercase hex characters (SHA-256).");
-
         var networkId = command.NetworkId.Trim();
+        var deviceId = command.DeviceId.Trim();
+
         var account = await accounts.FindByNetworkIdAsync(networkId, cancellationToken).ConfigureAwait(false);
         if (account is null || !passwordHasher.Verify(command.Password, account.PasswordSalt, account.PasswordHash))
             throw UseCaseException.Unauthorized("Invalid networkId or password.");

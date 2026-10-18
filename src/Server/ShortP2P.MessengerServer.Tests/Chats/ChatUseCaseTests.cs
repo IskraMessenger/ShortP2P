@@ -55,15 +55,6 @@ public class CreateChatRequestUseCaseTests
         Assert.Equal("Validation", ex.Code);
     }
 
-    [Fact]
-    public async Task ExecuteAsync_WhenMissingFields_ThrowsValidation()
-    {
-        var h = new TestHarness();
-        var ex = await Assert.ThrowsAsync<UseCaseException>(() =>
-            h.CreateChatRequest().ExecuteAsync(
-                new CreateChatRequestCommand("", "pk", "bob")));
-        Assert.Equal("Validation", ex.Code);
-    }
 }
 
 public class GetChatsUseCaseTests

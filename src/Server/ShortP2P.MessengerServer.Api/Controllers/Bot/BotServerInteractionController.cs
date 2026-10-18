@@ -115,10 +115,7 @@ public sealed class BotServerInteractionController(
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(request.RequestId))
-                throw UseCaseException.Validation("requestId is required.");
-
-            var messages = (request.Messages ?? [])
+            var messages = request.Messages
                 .Select(m => new DeliverBotMessageItem(m.NetworkId, m.EncryptedMessageBase64, m.CorrelationId))
                 .ToArray();
 
@@ -143,9 +140,6 @@ public sealed class BotServerInteractionController(
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(request.RequestId))
-                throw UseCaseException.Validation("requestId is required.");
-
             var messages = await waitForClientMessages.ExecuteAsync(
                 new WaitForClientMessagesQuery(request.BotNetworkId, request.BotKey, request.TimeoutSeconds),
                 cancellationToken).ConfigureAwait(false);

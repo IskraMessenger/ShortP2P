@@ -3,7 +3,7 @@ namespace ShortP2P.MessengerServer.UseCases.Forwards;
 /// <summary>
 /// Payload limits for peer-profile forwards (mirrors PeerProfileLimits / PeerProfileWireCodec).
 /// </summary>
-internal static class ForwardPayloadLimits
+public static class ForwardPayloadLimits
 {
     public const int NetworkIdWireLength = 12;
 

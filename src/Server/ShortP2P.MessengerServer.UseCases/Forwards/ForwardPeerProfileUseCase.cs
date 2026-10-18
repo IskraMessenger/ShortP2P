@@ -17,11 +17,10 @@ public sealed class ForwardPeerProfileUseCase(
     {
         ArgumentNullException.ThrowIfNull(command);
 
-        var forwardId = InputGuard.ForwardId(command.ForwardId);
-        var src = InputGuard.NetworkId(command.SrcNetworkId, "srcNetworkId");
-        var tgt = InputGuard.NetworkId(command.TgtNetworkId, "tgtNetworkId");
-        var payloadB64 = InputGuard.CiphertextBase64(
-            command.PayloadBase64, ForwardPayloadLimits.MaxReplyLength, "payloadBase64");
+        var forwardId = command.ForwardId.Trim();
+        var src = command.SrcNetworkId.Trim();
+        var tgt = command.TgtNetworkId.Trim();
+        var payloadB64 = command.PayloadBase64.Trim();
         var serverOrigin = string.IsNullOrWhiteSpace(command.ServerOrigin)
             ? "?"
             : CleartextFieldRules.Sanitize(command.ServerOrigin, 256);

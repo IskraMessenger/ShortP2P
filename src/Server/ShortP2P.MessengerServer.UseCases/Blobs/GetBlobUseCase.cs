@@ -9,10 +9,8 @@ public sealed class GetBlobUseCase(IBlobRepository blobs)
     {
         ArgumentNullException.ThrowIfNull(query);
 
-        var blobId = query.BlobId?.Trim() ?? "";
-        var caller = query.CallerNetworkId?.Trim() ?? "";
-        if (blobId.Length == 0)
-            throw UseCaseException.Validation("blobId is required.");
+        var blobId = query.BlobId.Trim();
+        var caller = query.CallerNetworkId.Trim();
         if (caller.Length == 0)
             throw UseCaseException.Unauthorized("Missing network id.");
 

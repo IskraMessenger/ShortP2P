@@ -1,6 +1,6 @@
+using ShortP2P.MessengerServer.Api.Validation.Validators;
+using ShortP2P.MessengerServer.Contracts.Dtos;
 using ShortP2P.MessengerServer.Tests.Fakes;
-using ShortP2P.MessengerServer.UseCases;
-using ShortP2P.MessengerServer.UseCases.Auth;
 
 namespace ShortP2P.MessengerServer.Tests.Auth;
 
@@ -10,23 +10,29 @@ public class RegisterClientInjectionTests
     [InlineData("<script>alert(1)</script>")]
     [InlineData("evil\nnick")]
     [InlineData("tag>break")]
-    public async Task ExecuteAsync_WhenNickUnsafe_ThrowsValidation(string nick)
+    public async Task RegisterRequest_WhenNickUnsafe_IsInvalid(string nick)
     {
-        var h = new TestHarness();
-        var ex = await Assert.ThrowsAsync<UseCaseException>(() =>
-            h.RegisterClient().ExecuteAsync(
-                new RegisterClientCommand(nick, "net-a", "secret", TestIds.DeviceA)));
-        Assert.Equal("Validation", ex.Code);
-        Assert.DoesNotContain(nick, ex.Message, StringComparison.Ordinal);
+        var result = await new RegisterRequestValidator().ValidateAsync(new RegisterRequest
+        {
+            Nick = nick,
+            NetworkId = "net-a",
+            Password = "secret",
+            DeviceId = TestIds.DeviceA
+        });
+        Assert.False(result.IsValid);
+        Assert.DoesNotContain(nick, result.Errors[0].ErrorMessage, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task ExecuteAsync_WhenNetworkIdHasSqlChars_ThrowsValidation()
+    public async Task RegisterRequest_WhenNetworkIdHasSqlChars_IsInvalid()
     {
-        var h = new TestHarness();
-        var ex = await Assert.ThrowsAsync<UseCaseException>(() =>
-            h.RegisterClient().ExecuteAsync(
-                new RegisterClientCommand("Alice", "net'or'1", "secret", TestIds.DeviceA)));
-        Assert.Equal("Validation", ex.Code);
+        var result = await new RegisterRequestValidator().ValidateAsync(new RegisterRequest
+        {
+            Nick = "Alice",
+            NetworkId = "net'or'1",
+            Password = "secret",
+            DeviceId = TestIds.DeviceA
+        });
+        Assert.False(result.IsValid);
     }
 }

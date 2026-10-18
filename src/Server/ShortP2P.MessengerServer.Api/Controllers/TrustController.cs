@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using ShortP2P.MessengerServer.Api.Extensions;
+using ShortP2P.MessengerServer.Api.Validation;
+using ShortP2P.MessengerServer.Api.Validation.Models;
 using ShortP2P.MessengerServer.Contracts;
 using ShortP2P.MessengerServer.Contracts.Dtos;
 using ShortP2P.MessengerServer.UseCases;
@@ -24,6 +26,13 @@ public sealed class TrustController(
     {
         try
         {
+            await ValidationGate
+                .EnsureValidAsync(
+                    HttpContext.RequestServices,
+                    new AskRatingArguments(serverIp, serverPort),
+                    cancellationToken)
+                .ConfigureAwait(false);
+
             _ = HttpContext.RequireNetworkId();
             var list = await askRatingUseCase
                 .ExecuteAsync(serverIp, serverPort, cancellationToken)

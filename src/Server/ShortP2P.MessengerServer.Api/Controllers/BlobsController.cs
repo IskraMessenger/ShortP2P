@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using ShortP2P.MessengerServer.Api.Extensions;
+using ShortP2P.MessengerServer.Api.Validation;
+using ShortP2P.MessengerServer.Api.Validation.Models;
 using ShortP2P.MessengerServer.Contracts;
 using ShortP2P.MessengerServer.UseCases;
 using ShortP2P.MessengerServer.UseCases.Blobs;
@@ -26,17 +28,25 @@ public sealed class BlobsController(
     {
         try
         {
+            await ValidationGate
+                .EnsureValidAsync(HttpContext.RequestServices, new BlobIdArgument(blobId), cancellationToken)
+                .ConfigureAwait(false);
+
             var caller = HttpContext.RequireNetworkId();
             var tgt = !string.IsNullOrWhiteSpace(targetNetworkId)
                 ? targetNetworkId.Trim()
                 : targetNetworkIdHeader?.Trim() ?? "";
+
+            await ValidationGate
+                .EnsureValidAsync(HttpContext.RequestServices, new TargetNetworkIdArgument(tgt), cancellationToken)
+                .ConfigureAwait(false);
 
             using var buffer = new MemoryStream();
             await Request.Body.CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
             var ciphertext = buffer.ToArray();
 
             await putBlobUseCase
-                .ExecuteAsync(new PutBlobCommand(blobId, caller, tgt, ciphertext), cancellationToken)
+                .ExecuteAsync(new PutBlobCommand(blobId.Trim(), caller, tgt, ciphertext), cancellationToken)
                 .ConfigureAwait(false);
 
             return Accepted();
@@ -52,9 +62,13 @@ public sealed class BlobsController(
     {
         try
         {
+            await ValidationGate
+                .EnsureValidAsync(HttpContext.RequestServices, new BlobIdArgument(blobId), cancellationToken)
+                .ConfigureAwait(false);
+
             var caller = HttpContext.RequireNetworkId();
             var blob = await getBlobUseCase
-                .ExecuteAsync(new GetBlobQuery(blobId, caller), cancellationToken)
+                .ExecuteAsync(new GetBlobQuery(blobId.Trim(), caller), cancellationToken)
                 .ConfigureAwait(false);
 
             return File(blob.Ciphertext, "application/octet-stream");
@@ -70,9 +84,13 @@ public sealed class BlobsController(
     {
         try
         {
+            await ValidationGate
+                .EnsureValidAsync(HttpContext.RequestServices, new BlobIdArgument(blobId), cancellationToken)
+                .ConfigureAwait(false);
+
             var caller = HttpContext.RequireNetworkId();
             await deleteBlobUseCase
-                .ExecuteAsync(new DeleteBlobCommand(blobId, caller), cancellationToken)
+                .ExecuteAsync(new DeleteBlobCommand(blobId.Trim(), caller), cancellationToken)
                 .ConfigureAwait(false);
 
             return NoContent();

@@ -8,10 +8,8 @@ public sealed class DeleteBlobUseCase(IBlobRepository blobs)
     {
         ArgumentNullException.ThrowIfNull(command);
 
-        var blobId = command.BlobId?.Trim() ?? "";
-        var caller = command.CallerNetworkId?.Trim() ?? "";
-        if (blobId.Length == 0)
-            throw UseCaseException.Validation("blobId is required.");
+        var blobId = command.BlobId.Trim();
+        var caller = command.CallerNetworkId.Trim();
         if (caller.Length == 0)
             throw UseCaseException.Unauthorized("Missing network id.");
 

@@ -108,9 +108,6 @@ public sealed class BotClientInteractionController(
         try
         {
             var caller = HttpContext.RequireNetworkId();
-            if (request.ReceivedAtUtc == default)
-                throw UseCaseException.Validation("receivedAtUtc is required.");
-
             await acknowledgeBotMessage
                 .ExecuteAsync(new AcknowledgeBotMessageCommand(caller, request.MessageId), cancellationToken)
                 .ConfigureAwait(false);
