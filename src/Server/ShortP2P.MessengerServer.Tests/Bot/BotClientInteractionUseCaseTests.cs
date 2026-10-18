@@ -78,6 +78,7 @@ public class BotClientInteractionUseCaseTests
             BotDescription = "test",
             KeySalt = "s",
             KeyHash = "h",
+            CertificateFingerprintSha256 = new string('a', 64),
             CreatedAtUtc = T0
         });
 
@@ -112,6 +113,7 @@ public class BotClientInteractionUseCaseTests
             BotDescription = "test",
             KeySalt = "s",
             KeyHash = "h",
+            CertificateFingerprintSha256 = new string('a', 64),
             CreatedAtUtc = T0
         });
         await h.Blacklist.AddAsync("bot");
@@ -146,6 +148,7 @@ public class BotClientInteractionUseCaseTests
             BotDescription = "test",
             KeySalt = "s",
             KeyHash = "h",
+            CertificateFingerprintSha256 = new string('a', 64),
             CreatedAtUtc = T0
         });
 
@@ -167,6 +170,7 @@ public class BotClientInteractionUseCaseTests
             BotDescription = "test",
             KeySalt = "s",
             KeyHash = "h",
+            CertificateFingerprintSha256 = new string('a', 64),
             CreatedAtUtc = T0
         });
 

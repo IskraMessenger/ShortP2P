@@ -57,6 +57,15 @@ public static class InputGuard
         return trimmed;
     }
 
+    /// <summary>Normalizes to 64 lowercase hex characters (SHA-256 fingerprint).</summary>
+    public static string CertificateFingerprintSha256(string? value, string fieldName = "fingerprintSha256")
+    {
+        var normalized = CertificateFingerprintRules.Normalize(value);
+        if (!CertificateFingerprintRules.IsValid(normalized))
+            throw UseCaseException.Validation($"{fieldName} is invalid.");
+        return normalized;
+    }
+
     public static string CiphertextBase64(string? value, int maxDecodedBytes, string fieldName = "ciphertext")
     {
         if (!CiphertextEnvelopeRules.TryValidate(value, maxDecodedBytes, out var normalized, out _))

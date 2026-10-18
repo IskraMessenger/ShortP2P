@@ -31,7 +31,8 @@ public sealed class BotServerInteractionController(
                     request.NetworkId,
                     request.BotName,
                     request.BotReadableName,
-                    request.BotDescription),
+                    request.BotDescription,
+                    request.FingerprintSha256),
                 cancellationToken).ConfigureAwait(false);
 
             return StatusCode(StatusCodes.Status201Created, new BotRegisterResponse
@@ -40,7 +41,8 @@ public sealed class BotServerInteractionController(
                 BotName = result.BotName,
                 BotReadableName = result.BotReadableName,
                 BotDescription = result.BotDescription,
-                BotKey = result.BotKey
+                BotKey = result.BotKey,
+                ServerFingerprintSha256 = result.ServerFingerprintSha256
             });
         }
         catch (UseCaseException ex)
@@ -59,13 +61,18 @@ public sealed class BotServerInteractionController(
         try
         {
             var result = await loginBot.ExecuteAsync(
-                new LoginBotCommand(request.NetworkId, request.BotName, request.BotKey),
+                new LoginBotCommand(
+                    request.NetworkId,
+                    request.BotName,
+                    request.BotKey,
+                    request.FingerprintSha256),
                 cancellationToken).ConfigureAwait(false);
 
             return Ok(new BotLoginResponse
             {
                 Token = result.Token,
-                ExpiresAtUtc = result.ExpiresAtUtc
+                ExpiresAtUtc = result.ExpiresAtUtc,
+                ServerFingerprintSha256 = result.ServerFingerprintSha256
             });
         }
         catch (UseCaseException ex)

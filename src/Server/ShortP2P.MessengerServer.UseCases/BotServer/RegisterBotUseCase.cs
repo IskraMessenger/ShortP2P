@@ -11,6 +11,7 @@ public sealed class RegisterBotUseCase(
     IBotKeyGenerator keyGenerator,
     IPasswordHasher passwordHasher,
     IClock clock,
+    IServerCertificateReader serverCertificate,
     BotBlacklistGuard blacklistGuard,
     BotAccessLogService accessLog)
 {
@@ -26,6 +27,7 @@ public sealed class RegisterBotUseCase(
                 command.BotReadableName, BotLimits.MaxBotReadableNameLength, "botReadableName");
             var botDescription = InputGuard.Cleartext(
                 command.BotDescription, BotLimits.MaxBotDescriptionLength, "botDescription");
+            var fingerprint = InputGuard.CertificateFingerprintSha256(command.FingerprintSha256);
 
             await blacklistGuard
                 .EnsureAllowedAsync(networkId, BotAccessOperations.Register, cancellationToken)
@@ -51,6 +53,7 @@ public sealed class RegisterBotUseCase(
                         BotDescription = botDescription,
                         KeySalt = hashed.Salt,
                         KeyHash = hashed.Hash,
+                        CertificateFingerprintSha256 = fingerprint,
                         CreatedAtUtc = clock.UtcNow
                     },
                     cancellationToken).ConfigureAwait(false);
@@ -59,6 +62,8 @@ public sealed class RegisterBotUseCase(
             {
                 throw UseCaseException.Conflict("NetworkId or botName is already registered.");
             }
+
+            var serverCert = await serverCertificate.GetAsync(cancellationToken).ConfigureAwait(false);
 
             await accessLog
                 .WriteAsync(
@@ -70,7 +75,13 @@ public sealed class RegisterBotUseCase(
                     cancellationToken)
                 .ConfigureAwait(false);
 
-            return new RegisterBotResult(networkId, botName, botReadableName, botDescription, botKey);
+            return new RegisterBotResult(
+                networkId,
+                botName,
+                botReadableName,
+                botDescription,
+                botKey,
+                serverCert.FingerprintSha256);
         }
         catch (UseCaseException ex)
         {

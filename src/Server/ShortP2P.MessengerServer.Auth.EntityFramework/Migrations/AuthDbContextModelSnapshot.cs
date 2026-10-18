@@ -73,6 +73,11 @@ partial class AuthDbContextModelSnapshot : ModelSnapshot
                 b.Property<DateTime>("CreatedAtUtc")
                     .HasColumnType("TEXT");
 
+                b.Property<string>("CertificateFingerprintSha256")
+                    .IsRequired()
+                    .HasMaxLength(64)
+                    .HasColumnType("TEXT");
+
                 b.Property<string>("KeyHash")
                     .IsRequired()
                     .HasMaxLength(256)

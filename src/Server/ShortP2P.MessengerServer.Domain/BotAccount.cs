@@ -15,6 +15,9 @@ public sealed class BotAccount
 
     public required string KeyHash { get; init; }
 
+    /// <summary>SHA-256 fingerprint of the bot TLS certificate (64 lowercase hex chars).</summary>
+    public required string CertificateFingerprintSha256 { get; init; }
+
     /// <summary>Creation time UTC.</summary>
     public required DateTime CreatedAtUtc { get; init; }
 }

@@ -21,4 +21,7 @@ public sealed class BotRegisterResponse
     /// <para><b>Secret:</b> known only to the server and the bot; must not be logged, relayed to clients, or shared otherwise.</para>
     /// </summary>
     public required string BotKey { get; init; }
+
+    /// <summary>SHA-256 fingerprint of this messenger server TLS certificate (hex).</summary>
+    public required string ServerFingerprintSha256 { get; init; }
 }

@@ -14,4 +14,10 @@ public sealed class BotRegisterRequest
 
     /// <summary>Bot description (max <see cref="BotLimits.MaxBotDescriptionLength"/> chars).</summary>
     public required string BotDescription { get; init; }
+
+    /// <summary>
+    /// SHA-256 fingerprint of the bot TLS certificate (hex; optional <c>:</c>/<c>-</c>/space separators).
+    /// Stored by the server and checked on later <see cref="BotLoginRequest"/>.
+    /// </summary>
+    public required string FingerprintSha256 { get; init; }
 }

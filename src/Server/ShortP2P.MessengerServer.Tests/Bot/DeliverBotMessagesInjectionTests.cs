@@ -64,6 +64,7 @@ public class DeliverBotMessagesInjectionTests
                 BotDescription = "test",
                 KeySalt = hashed.Salt,
                 KeyHash = hashed.Hash,
+                CertificateFingerprintSha256 = new string('a', 64),
                 CreatedAtUtc = T0
             });
         }

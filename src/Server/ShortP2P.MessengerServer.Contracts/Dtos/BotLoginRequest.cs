@@ -15,4 +15,10 @@ public sealed class BotLoginRequest
     /// <para><b>Secret:</b> must not be logged, relayed to clients, or shared otherwise.</para>
     /// </summary>
     public required string BotKey { get; init; }
+
+    /// <summary>
+    /// SHA-256 fingerprint of the bot TLS certificate (hex; optional <c>:</c>/<c>-</c>/space separators).
+    /// Must match the fingerprint stored at registration.
+    /// </summary>
+    public required string FingerprintSha256 { get; init; }
 }
