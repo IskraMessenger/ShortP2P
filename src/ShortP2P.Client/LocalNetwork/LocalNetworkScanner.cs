@@ -41,7 +41,7 @@ public sealed class LocalNetworkScanner(
     IBluetoothPresencePingTargetsProvider? bluetoothPresencePingTargetsProvider = null,
     IPeerProfileStore? peerProfileStore = null,
     ILocalPeerProfileSource? localPeerProfileSource = null,
-    ILogger? logger = null) : IAsyncDisposable
+    ILogger? logger = null) : IAsyncDisposable, IDisposable
 {
     /// <summary>Длительность приёма пингов при ручном сканировании по умолчанию.</summary>
     public static readonly TimeSpan DefaultScanListenDuration = TimeSpan.FromSeconds(45);
@@ -119,6 +119,9 @@ public sealed class LocalNetworkScanner(
     {
         await StopAsync().ConfigureAwait(false);
     }
+
+    /// <summary>Sync dispose for MS.DI <c>ServiceProvider.Dispose()</c> (calls <see cref="DisposeAsync"/>).</summary>
+    public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
 
     /// <summary>
     ///     Есть недавний presence-пинг с данным short network id (тот же порог, что и для «протухания» списка LAN).

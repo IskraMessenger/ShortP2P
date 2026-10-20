@@ -16,7 +16,7 @@ namespace ShortP2P.Client.Services.MessengerServers;
 /// <summary>
 /// Client-side registry of messenger servers: add/remove/active, fingerprint pin, register/login.
 /// </summary>
-public sealed class MessengerServerManager : IAsyncDisposable
+public sealed class MessengerServerManager : IAsyncDisposable, IDisposable
 {
     public static readonly TimeSpan DefaultHttpTimeout = TimeSpan.FromSeconds(90);
     public static readonly TimeSpan BlobHttpTimeout = TimeSpan.FromMinutes(10);
@@ -1240,6 +1240,9 @@ public sealed class MessengerServerManager : IAsyncDisposable
         _registeredClients.Clear();
         _gate.Dispose();
     }
+
+    /// <summary>Sync dispose for MS.DI <c>ServiceProvider.Dispose()</c> (calls <see cref="DisposeAsync"/>).</summary>
+    public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
 
     private static int Clamp(int value, int min, int max) =>
         value < min ? min : value > max ? max : value;

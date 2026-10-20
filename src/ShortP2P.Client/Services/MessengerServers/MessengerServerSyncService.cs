@@ -18,7 +18,7 @@ namespace ShortP2P.Client.Services.MessengerServers;
 /// <summary>
 /// Background long-poll inbox for messenger servers, plus outbound server-first message delivery.
 /// </summary>
-public sealed class MessengerServerSyncService : IAsyncDisposable
+public sealed class MessengerServerSyncService : IAsyncDisposable, IDisposable
 {
     /// <summary>Default long-poll wait requested from the server (seconds).</summary>
     public const int LongPollTimeoutSeconds = 25;
@@ -1533,4 +1533,7 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
         await StopAsync().ConfigureAwait(false);
         _ingestGate.Dispose();
     }
+
+    /// <summary>Sync dispose for MS.DI <c>ServiceProvider.Dispose()</c> (calls <see cref="DisposeAsync"/>).</summary>
+    public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
 }
