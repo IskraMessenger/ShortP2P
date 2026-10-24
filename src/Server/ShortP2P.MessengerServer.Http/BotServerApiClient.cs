@@ -6,6 +6,7 @@ namespace ShortP2P.MessengerServer.Http;
 /// <summary>
 /// HTTPS client for bot ↔ messenger-server (<c>/bot_server_interaction</c>).
 /// Auth is via <c>botKey</c> in the body (no Bearer session).
+/// Bots present their TLS certificate fingerprint on register/login (SHO-18).
 /// </summary>
 public sealed class BotServerApiClient(HttpClient httpClient) : IBotServerApi
 {

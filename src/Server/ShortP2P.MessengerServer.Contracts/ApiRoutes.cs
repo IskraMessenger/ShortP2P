@@ -59,7 +59,9 @@ public static class ApiRoutes
     /// <summary>GET bot blacklist for authorized clients.</summary>
     public const string BotBlacklist = Prefix + "/bots/blacklist";
 
-    /// <summary>POST register a bot (anonymous); returns <c>botKey</c> once + server fingerprint.</summary>
+    /// <summary>
+    /// POST register a bot (anonymous; TLS fingerprint required); returns <c>botKey</c> once + server fingerprint.
+    /// </summary>
     public const string BotServerRegister = Prefix + "/bot_server_interaction/register";
 
     /// <summary>POST authorize a bot with <c>botKey</c> + certificate fingerprint (anonymous).</summary>
