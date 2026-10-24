@@ -58,4 +58,20 @@ public static class ApiRoutes
 
     /// <summary>GET bot blacklist for authorized clients.</summary>
     public const string BotBlacklist = Prefix + "/bots/blacklist";
+
+    /// <summary>POST register a bot (anonymous); returns <c>botKey</c> once + server fingerprint.</summary>
+    public const string BotServerRegister = Prefix + "/bot_server_interaction/register";
+
+    /// <summary>POST authorize a bot with <c>botKey</c> + certificate fingerprint (anonymous).</summary>
+    public const string BotServerLogin = Prefix + "/bot_server_interaction/login";
+
+    /// <summary>POST remove a bot by <c>networkId</c> + <c>botKey</c> (anonymous).</summary>
+    public const string BotServerRemove = Prefix + "/bot_server_interaction/remove";
+
+    /// <summary>POST bot → clients encrypted messages (store-and-forward until client receipt).</summary>
+    public const string BotServerSendMessages = Prefix + "/bot_server_interaction/send_messages";
+
+    /// <summary>POST long-poll client → bot messages (auth via <c>botKey</c> in body).</summary>
+    public const string BotServerWaitForIncomeMessages =
+        Prefix + "/bot_server_interaction/wait_for_income_messages";
 }
