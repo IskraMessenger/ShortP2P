@@ -47,6 +47,12 @@ public static class ApiRoutes
     /// <summary>POST claim about another server (UNAVAILABLE / MALFUNCTIONED / WRONGCERT).</summary>
     public const string TrustClaim = Prefix + "/trust/claim";
 
+    /// <summary>POST bot register (anonymous; TLS fingerprint required).</summary>
+    public const string BotServerRegister = Prefix + "/bot_server_interaction/register";
+
+    /// <summary>POST bot login (anonymous; TLS fingerprint required).</summary>
+    public const string BotServerLogin = Prefix + "/bot_server_interaction/login";
+
     /// <summary>POST long-poll encrypted messages from bots to this client (JWT).</summary>
     public const string BotClientWaitForMessages = Prefix + "/bot_client_interaction/wait_for_messages";
 
