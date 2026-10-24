@@ -47,12 +47,6 @@ public static class ApiRoutes
     /// <summary>POST claim about another server (UNAVAILABLE / MALFUNCTIONED / WRONGCERT).</summary>
     public const string TrustClaim = Prefix + "/trust/claim";
 
-    /// <summary>POST bot register (anonymous; TLS fingerprint required).</summary>
-    public const string BotServerRegister = Prefix + "/bot_server_interaction/register";
-
-    /// <summary>POST bot login (anonymous; TLS fingerprint required).</summary>
-    public const string BotServerLogin = Prefix + "/bot_server_interaction/login";
-
     /// <summary>POST long-poll encrypted messages from bots to this client (JWT).</summary>
     public const string BotClientWaitForMessages = Prefix + "/bot_client_interaction/wait_for_messages";
 
@@ -64,4 +58,22 @@ public static class ApiRoutes
 
     /// <summary>GET bot blacklist for authorized clients.</summary>
     public const string BotBlacklist = Prefix + "/bots/blacklist";
+
+    /// <summary>
+    /// POST register a bot (anonymous; TLS fingerprint required); returns <c>botKey</c> once + server fingerprint.
+    /// </summary>
+    public const string BotServerRegister = Prefix + "/bot_server_interaction/register";
+
+    /// <summary>POST authorize a bot with <c>botKey</c> + certificate fingerprint (anonymous).</summary>
+    public const string BotServerLogin = Prefix + "/bot_server_interaction/login";
+
+    /// <summary>POST remove a bot by <c>networkId</c> + <c>botKey</c> (anonymous).</summary>
+    public const string BotServerRemove = Prefix + "/bot_server_interaction/remove";
+
+    /// <summary>POST bot → clients encrypted messages (store-and-forward until client receipt).</summary>
+    public const string BotServerSendMessages = Prefix + "/bot_server_interaction/send_messages";
+
+    /// <summary>POST long-poll client → bot messages (auth via <c>botKey</c> in body).</summary>
+    public const string BotServerWaitForIncomeMessages =
+        Prefix + "/bot_server_interaction/wait_for_income_messages";
 }

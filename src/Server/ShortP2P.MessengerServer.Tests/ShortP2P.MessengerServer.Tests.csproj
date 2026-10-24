@@ -16,6 +16,7 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="$(MicrosoftExtensionsHostingVersion)" />
     <PackageReference Include="Microsoft.Extensions.Options" Version="$(MicrosoftExtensionsHostingVersion)" />
+    <PackageReference Include="WireMock.Net" Version="2.20.0" />
     <PackageReference Include="xunit" Version="2.5.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.5.3" />
   </ItemGroup>
@@ -28,6 +29,7 @@
     <ProjectReference Include="..\ShortP2P.MessengerServer.Api\ShortP2P.MessengerServer.Api.csproj" />
     <ProjectReference Include="..\ShortP2P.MessengerServer.Auth\ShortP2P.MessengerServer.Auth.csproj" />
     <ProjectReference Include="..\ShortP2P.MessengerServer.Domain\ShortP2P.MessengerServer.Domain.csproj" />
+    <ProjectReference Include="..\ShortP2P.MessengerServer.Http\ShortP2P.MessengerServer.Http.csproj" />
     <ProjectReference Include="..\ShortP2P.MessengerServer.Infrastructure\ShortP2P.MessengerServer.Infrastructure.csproj" />
     <ProjectReference Include="..\ShortP2P.MessengerServer.UseCases\ShortP2P.MessengerServer.UseCases.csproj" />
     <ProjectReference Include="..\..\ShortP2P.TrustSystem\ShortP2P.TrustSystem.csproj" />
