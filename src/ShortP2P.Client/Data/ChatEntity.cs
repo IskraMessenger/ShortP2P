@@ -38,5 +38,8 @@ public class ChatEntity
     /// <summary><see cref="Services.ChatDeliveryPath"/> stored as int. 0 = auto.</summary>
     public int DeliveryPath { get; set; }
 
+    /// <summary>True when the peer is a messenger-server bot (BotClientInteraction path).</summary>
+    public bool IsBot { get; set; }
+
     public long UpdatedUtcTicks { get; set; }
 }

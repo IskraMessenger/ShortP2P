@@ -11,7 +11,8 @@ namespace ShortP2P.Client.Services;
 /// <summary>
 /// Fx48 old windows session: no UDP/BLE P2P.
 /// Outbound delivery is a single per-chat background flush worker that reads Pending rows from
-/// SQLite, posts via <see cref="MessengerServerSyncService.TryDeliverWireAsync"/>, and updates
+/// SQLite and posts via messenger server (<see cref="MessengerServerSyncService.TryDeliverWireAsync"/>
+/// or <see cref="MessengerServerSyncService.TryDeliverBotWireAsync"/> for bot chats). Updates
 /// Sent / Failed in the DB. Incoming wires stay on the repository path
 /// (<see cref="IsReadyForServerReceive"/> is always false).
 /// </summary>
@@ -264,19 +265,26 @@ public sealed class ChatP2PSession
     }
 
     /// <summary>
-    /// Ensures a ChatRequest is published so PeerRsaPublicJson can land via long-poll,
-    /// then re-queues any leftover Pending outgoing rows for this chat.
+    /// For human peers: publish ChatRequest so PeerRsaPublicJson can land via long-poll.
+    /// Bot chats skip ChatRequest (catalog key is already on the row). Then re-queues Pending sends.
     /// </summary>
     public async Task StartAsync(CancellationToken cancellationToken = default)
     {
-        try
+        var latest = await _repo.GetChatAsync(_chat.Id).ConfigureAwait(false);
+        if (latest != null)
+            ApplyChatRow(latest);
+
+        if (!_chat.IsBot)
         {
-            await _servers.PublishChatRequestAsync(_chat.PeerNetworkIdShort, cancellationToken)
-                .ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            _logger?.LogDebug(ex, "Chat {ChatId}: PublishChatRequest on start", _chat.Id);
+            try
+            {
+                await _servers.PublishChatRequestAsync(_chat.PeerNetworkIdShort, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger?.LogDebug(ex, "Chat {ChatId}: PublishChatRequest on start", _chat.Id);
+            }
         }
 
         await EnqueueExistingPendingAsync(cancellationToken).ConfigureAwait(false);
@@ -296,7 +304,8 @@ public sealed class ChatP2PSession
             .ConfigureAwait(false);
         RaiseMessagesChanged();
 
-        QueueOutgoingDelivery(messageId);
+        // Await flush so WinForms SendAsync sees delivery errors and debugger can step into deliver.
+        await EnqueueAndFlushAsync(messageId, cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask SendImageAsync(ReadOnlyMemory<byte> imageBytes, string mimeType,
@@ -369,6 +378,18 @@ public sealed class ChatP2PSession
         }
 
         StartFlushPendingInBackground();
+    }
+
+    private async Task EnqueueAndFlushAsync(int messageId, CancellationToken cancellationToken)
+    {
+        lock (_pendingSync)
+        {
+            if (!_pendingOutgoing.Contains(messageId))
+                _pendingOutgoing.Add(messageId);
+        }
+
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _outboundCts.Token);
+        await TryFlushPendingOutgoingAsync(linked.Token).ConfigureAwait(false);
     }
 
     private async Task EnqueueExistingPendingAsync(CancellationToken cancellationToken)
@@ -481,6 +502,8 @@ public sealed class ChatP2PSession
                         "Chat {ChatId}: deferring outbound message {MessageId}",
                         _chat.Id, nextId);
                     DequeuePendingOutgoingHead(nextId);
+                    if (_chat.IsBot)
+                        throw;
                     return;
                 }
                 catch (Exception ex)
@@ -503,6 +526,8 @@ public sealed class ChatP2PSession
                     }
 
                     DequeuePendingOutgoingHead(nextId);
+                    // Surface to SendTextAsync / ChatForm so the user sees why it did not leave.
+                    throw;
                 }
             }
         }
@@ -536,19 +561,33 @@ public sealed class ChatP2PSession
 
     private async Task DeliverOutgoingWireAsync(int messageId, byte[] wire, CancellationToken cancellationToken)
     {
-        // Refresh chat row so PeerRsaPublicJson from long-poll is visible to TryDeliverWireAsync.
+        // Refresh chat row so PeerRsaPublicJson / IsBot from catalog or long-poll is current.
         var latest = await _repo.GetChatAsync(_chat.Id).ConfigureAwait(false);
         if (latest != null)
             ApplyChatRow(latest);
 
-        var acceptedId = await _servers
-            .TryDeliverWireAsync(_chat, _user, wire, cancellationToken)
-            .ConfigureAwait(false);
-
-        if (string.IsNullOrEmpty(acceptedId))
+        string? acceptedId;
+        if (_chat.IsBot)
         {
-            throw new OutboundNotReadyException(
-                "Messenger server did not accept the message (no peer key or no ready server).");
+            acceptedId = await _servers
+                .TryDeliverBotWireAsync(_chat, _user, wire, cancellationToken)
+                .ConfigureAwait(false);
+            if (string.IsNullOrEmpty(acceptedId))
+            {
+                throw new InvalidOperationException(
+                    "Не удалось доставить сообщение боту через messenger-сервер.");
+            }
+        }
+        else
+        {
+            acceptedId = await _servers
+                .TryDeliverWireAsync(_chat, _user, wire, cancellationToken)
+                .ConfigureAwait(false);
+            if (string.IsNullOrEmpty(acceptedId))
+            {
+                throw new OutboundNotReadyException(
+                    "Messenger server did not accept the message (no peer key or no ready server).");
+            }
         }
 
         await _repo.RegisterOutgoingServerMessageAsync(acceptedId!, messageId, _chat.Id)

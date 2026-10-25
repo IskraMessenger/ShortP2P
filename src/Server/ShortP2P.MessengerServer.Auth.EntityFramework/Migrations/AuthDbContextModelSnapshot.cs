@@ -88,6 +88,11 @@ partial class AuthDbContextModelSnapshot : ModelSnapshot
                     .HasMaxLength(256)
                     .HasColumnType("TEXT");
 
+                b.Property<string>("MessagePublicKey")
+                    .IsRequired()
+                    .HasMaxLength(16384)
+                    .HasColumnType("TEXT");
+
                 b.HasKey("NetworkId");
 
                 b.HasIndex("BotName")

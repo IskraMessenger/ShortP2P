@@ -79,6 +79,7 @@ public class BotClientInteractionUseCaseTests
             KeySalt = "s",
             KeyHash = "h",
             CertificateFingerprintSha256 = new string('a', 64),
+            MessagePublicKey = "{\"k\":\"bot-pub\"}",
             CreatedAtUtc = T0
         });
 
@@ -114,6 +115,7 @@ public class BotClientInteractionUseCaseTests
             KeySalt = "s",
             KeyHash = "h",
             CertificateFingerprintSha256 = new string('a', 64),
+            MessagePublicKey = "{\"k\":\"bot-pub\"}",
             CreatedAtUtc = T0
         });
         await h.Blacklist.AddAsync("bot");

@@ -20,6 +20,7 @@ public class ListBotsUseCaseTests
         Assert.Equal("Alpha", list[0].BotReadableName);
         Assert.Equal("first", list[0].BotDescription);
         Assert.Equal("zeta", list[1].BotName);
+        Assert.Equal("{\"k\":\"alpha\"}", list[0].MessagePublicKey);
     }
 
     private static BotAccount Sample(string networkId, string name, string readable, string description) => new()
@@ -31,6 +32,7 @@ public class ListBotsUseCaseTests
         KeySalt = "salt",
         KeyHash = "hash",
         CertificateFingerprintSha256 = new string('a', 64),
+        MessagePublicKey = string.IsNullOrWhiteSpace(networkId) ? "" : $"{{\"k\":\"{name}\"}}",
         CreatedAtUtc = new DateTime(2026, 10, 18, 0, 0, 0, DateTimeKind.Utc)
     };
 
