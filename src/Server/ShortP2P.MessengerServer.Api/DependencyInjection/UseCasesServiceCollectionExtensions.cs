@@ -3,6 +3,7 @@ using ShortP2P.MessengerServer.Infrastructure.BotRateLimit;
 using ShortP2P.MessengerServer.UseCases.Abstractions;
 using ShortP2P.MessengerServer.UseCases.Auth;
 using ShortP2P.MessengerServer.UseCases.BotBlacklist;
+using ShortP2P.MessengerServer.UseCases.BotCatalog;
 using ShortP2P.MessengerServer.UseCases.BotClient;
 using ShortP2P.MessengerServer.UseCases.BotRateLimit;
 using ShortP2P.MessengerServer.UseCases.BotServer;
@@ -59,6 +60,7 @@ public static class UseCasesServiceCollectionExtensions
         services.AddScoped<SendMessageToBotUseCase>();
         services.AddScoped<AcknowledgeBotMessageUseCase>();
         services.AddScoped<GetBotBlackListUseCase>();
+        services.AddScoped<ListBotsUseCase>();
         services.AddScoped<AddBotToBlacklistUseCase>();
         services.AddScoped<RemoveBotFromBlacklistUseCase>();
         services.AddScoped<GetClientPresencesUseCase>();

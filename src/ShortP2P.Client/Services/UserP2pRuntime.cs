@@ -97,6 +97,19 @@ public sealed class UserP2pRuntime : IAsyncDisposable
             var entries = remote.Select(ToDirectoryEntry).ToArray();
             LocalScan.ApplyMessengerServerDirectory(entries);
             await SyncChatNicknamesFromPresenceAsync(remote, ct).ConfigureAwait(false);
+            try
+            {
+                var bots = await MessengerServers.ProbeAndListRemoteBotsAsync(ct).ConfigureAwait(false);
+                LocalScan.ApplyBotDirectory(MessengerServerSyncService.ToBotDirectoryEntries(bots));
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "GetBots discovery round failed");
+            }
         };
         LocalScan.RequestPeerProfileViaMessengerServer = (id, ct) =>
             MessengerServers.RequestPeerProfileViaForwardAsync(id, ct);

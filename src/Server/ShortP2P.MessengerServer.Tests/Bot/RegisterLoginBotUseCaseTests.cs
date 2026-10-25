@@ -140,6 +140,9 @@ public class RegisterLoginBotUseCaseTests
                 _byName.Remove(account.BotName);
             return Task.CompletedTask;
         }
+
+        public Task<IReadOnlyList<BotAccount>> ListAllAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<BotAccount>>(_byNetwork.Values.ToArray());
     }
 
     private sealed class EmptyBlacklistRepo : IBotBlacklistRepository

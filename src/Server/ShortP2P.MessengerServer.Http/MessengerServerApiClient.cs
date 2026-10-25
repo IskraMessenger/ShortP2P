@@ -194,6 +194,17 @@ public sealed class MessengerServerApiClient(
             .ConfigureAwait(false);
     }
 
+    public async Task<IReadOnlyList<BotCatalogDto>> GetBotsAsync(CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient
+            .GetAsync(ApiRoutes.Bots, cancellationToken)
+            .ConfigureAwait(false);
+
+        return await MessengerServerJson
+            .ReadJsonAsync<BotCatalogDto[]>(response, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     public async Task<ServerPowerResponse> GetPowerAsync(CancellationToken cancellationToken = default)
     {
         using var response = await httpClient

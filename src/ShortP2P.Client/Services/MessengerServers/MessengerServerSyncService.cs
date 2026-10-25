@@ -8,6 +8,7 @@ using ShortP2P.Auth.Data;
 using ShortP2P.Client.ChatMedia;
 using ShortP2P.Client.Data;
 using ShortP2P.Crypto;
+using ShortP2P.Discovery;
 using ShortP2P.Discovery.Gossip;
 using ShortP2P.Discovery.Profile;
 using ShortP2P.MessengerServer.Contracts.Dtos;
@@ -204,6 +205,41 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
         var ready = await _manager.EnsureAllActiveReadyAsync(cancellationToken).ConfigureAwait(false);
 
         return await ListRemoteClientsAsync(ready, self, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>GET /bots on each ready trusted server. Failures of one server are skipped.</summary>
+    public async Task<IReadOnlyList<BotCatalogDto>> ProbeAndListRemoteBotsAsync(
+        CancellationToken cancellationToken)
+    {
+        var user = _auth.CurrentUser;
+        if (user == null)
+            return [];
+
+        var self = user.NetworkIdShort.Trim();
+        var ready = await _manager.EnsureAllActiveReadyAsync(cancellationToken).ConfigureAwait(false);
+        return await ListRemoteBotsAsync(ready, self, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Directory rows for <see cref="LocalNetworkScanner.ApplyBotDirectory"/>.</summary>
+    public static MessengerServerDirectoryEntry[] ToBotDirectoryEntries(IReadOnlyList<BotCatalogDto> bots)
+    {
+        var list = new MessengerServerDirectoryEntry[bots.Count];
+        for (var i = 0; i < bots.Count; i++)
+        {
+            var bot = bots[i];
+            var readable = bot.BotReadableName?.Trim() ?? "";
+            var name = bot.BotName?.Trim() ?? "";
+            var nick = readable.Length > 0 ? readable : name;
+            list[i] = new MessengerServerDirectoryEntry(
+                bot.NetworkId.Trim(),
+                nick,
+                false,
+                DateTimeOffset.UtcNow,
+                true,
+                bot.BotDescription?.Trim() ?? "");
+        }
+
+        return list;
     }
 
     /// <summary>Obsolete name kept for call sites; prefers GetClients probe.</summary>
@@ -826,6 +862,43 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
 
                 if (!byId.TryGetValue(id, out var existing) || PreferClient(client, existing))
                     byId[id] = client;
+            }
+        }
+
+        return byId.Values.ToArray();
+    }
+
+    private async Task<IReadOnlyList<BotCatalogDto>> ListRemoteBotsAsync(
+        IReadOnlyList<MessengerServerConnection> ready,
+        string selfNetworkId,
+        CancellationToken cancellationToken)
+    {
+        var byId = new Dictionary<string, BotCatalogDto>(StringComparer.Ordinal);
+        foreach (var conn in ready)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!_manager.AllowsTraffic(conn))
+                continue;
+
+            IReadOnlyList<BotCatalogDto> list;
+            try
+            {
+                // Not TrackAsync: a missing /bots on an older server must not count as a trust failure.
+                list = await conn.Api.GetBotsAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogDebug(ex, "GetBots failed on {BaseUrl}", conn.Entity.BaseUrl);
+                continue;
+            }
+
+            foreach (var bot in list)
+            {
+                var id = bot.NetworkId.Trim();
+                if (id.Length == 0 || string.Equals(id, selfNetworkId, StringComparison.Ordinal))
+                    continue;
+                if (!byId.ContainsKey(id))
+                    byId[id] = bot;
             }
         }
 

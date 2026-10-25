@@ -17,6 +17,7 @@ namespace ShortP2P.Discovery;
 /// </param>
 /// <param name="MessengerServerOnline">Online по каталогу messenger-сервера (GetClients).</param>
 /// <param name="AboutMe">Локально известное «о себе» (из peer profile reply при скане).</param>
+/// <param name="IsBot">Узел из каталога ботов messenger-сервера (GET /bots).</param>
 public sealed record DiscoveredLocalPeer(
     CompressedNetworkId NetworkId,
     string Nickname,
@@ -27,18 +28,23 @@ public sealed record DiscoveredLocalPeer(
     LinkTechnologyPreset AdvertisedLinkTechnology = LinkTechnologyPreset.Unlimited,
     PresencePeerCapabilities AdvertisedCapabilities = PresencePeerCapabilities.Chat,
     bool MessengerServerOnline = false,
-    string AboutMe = "");
+    string AboutMe = "",
+    bool IsBot = false);
 
-/// <summary>Клиент из каталога messenger-сервера (без прямого UDP/BT адреса).</summary>
+/// <summary>Клиент или бот из каталога messenger-сервера (без прямого UDP/BT адреса).</summary>
 /// <param name="NetworkIdShort">Короткий network id (base64url).</param>
 /// <param name="Nickname">Ник на сервере.</param>
 /// <param name="Online">Online по keep-alive сервера.</param>
 /// <param name="LastSeenUtc">Последний keep-alive или регистрация.</param>
+/// <param name="IsBot">Запись из каталога ботов, а не из GetClients.</param>
+/// <param name="AboutMe">Описание бота или пусто для обычного клиента.</param>
 public sealed record MessengerServerDirectoryEntry(
     string NetworkIdShort,
     string Nickname,
     bool Online,
-    DateTimeOffset LastSeenUtc);
+    DateTimeOffset LastSeenUtc,
+    bool IsBot = false,
+    string AboutMe = "");
 
 public sealed class DiscoveryPingReceivedEventArgs(DiscoveredLocalPeer peer) : EventArgs
 {

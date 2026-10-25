@@ -7,6 +7,7 @@ using ShortP2P.MessengerServer.Contracts;
 using ShortP2P.MessengerServer.Contracts.Dtos;
 using ShortP2P.MessengerServer.UseCases;
 using ShortP2P.MessengerServer.UseCases.BotBlacklist;
+using ShortP2P.MessengerServer.UseCases.BotCatalog;
 
 namespace ShortP2P.MessengerServer.Api.Controllers;
 
@@ -17,8 +18,25 @@ namespace ShortP2P.MessengerServer.Api.Controllers;
 public sealed class BotsController(
     GetBotBlackListUseCase getBotBlackList,
     AddBotToBlacklistUseCase addBotToBlacklist,
-    RemoveBotFromBlacklistUseCase removeBotFromBlacklist) : ControllerBase
+    RemoveBotFromBlacklistUseCase removeBotFromBlacklist,
+    ListBotsUseCase listBots) : ControllerBase
 {
+    /// <summary>Registered bots for selection (authorized clients, no secrets).</summary>
+    [HttpGet]
+    public async Task<IActionResult> ListBotsAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            _ = HttpContext.RequireNetworkId();
+            var list = await listBots.ExecuteAsync(cancellationToken).ConfigureAwait(false);
+            return Ok(list);
+        }
+        catch (UseCaseException ex)
+        {
+            return this.ToApiErrorResult(ex);
+        }
+    }
+
     /// <summary>List blacklisted bot network ids (authorized clients).</summary>
     [HttpGet("blacklist")]
     public async Task<IActionResult> GetBotBlackListAsync(CancellationToken cancellationToken)

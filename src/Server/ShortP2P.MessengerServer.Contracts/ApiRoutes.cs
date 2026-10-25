@@ -56,6 +56,9 @@ public static class ApiRoutes
     /// <summary>POST client receipt for a bot → client message (JWT); server drops its copy.</summary>
     public const string BotClientReceipts = Prefix + "/bot_client_interaction/receipts";
 
+    /// <summary>GET registered bots for authorized clients (public fields only).</summary>
+    public const string Bots = Prefix + "/bots";
+
     /// <summary>GET bot blacklist for authorized clients.</summary>
     public const string BotBlacklist = Prefix + "/bots/blacklist";
 

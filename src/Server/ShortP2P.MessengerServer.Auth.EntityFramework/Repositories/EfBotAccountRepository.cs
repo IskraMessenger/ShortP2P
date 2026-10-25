@@ -38,4 +38,12 @@ public sealed class EfBotAccountRepository(AuthDbContext db) : IBotAccountReposi
             .ExecuteDeleteAsync(cancellationToken)
             .ConfigureAwait(false);
     }
+
+    public async Task<IReadOnlyList<BotAccount>> ListAllAsync(CancellationToken cancellationToken = default)
+    {
+        var rows = await db.Bots.AsNoTracking()
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        return rows.Select(row => row.ToDomain()).ToArray();
+    }
 }

@@ -226,6 +226,9 @@ public class BotClientInteractionUseCaseTests
             _items.Remove(networkId);
             return Task.CompletedTask;
         }
+
+        public Task<IReadOnlyList<BotAccount>> ListAllAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<BotAccount>>(_items.Values.ToArray());
     }
 
     private sealed class MemoryBotToClient : IBotToClientMessageRepository

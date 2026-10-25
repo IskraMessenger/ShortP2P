@@ -53,6 +53,7 @@ public sealed class LocalNetworkScanner(
     private readonly ConcurrentDictionary<string, TransportAddress> _bluetoothTargets = new();
 
     private readonly ConcurrentDictionary<CompressedNetworkId, DiscoveredLocalPeer> _entries = new();
+    private readonly ConcurrentDictionary<CompressedNetworkId, byte> _messengerClientIds = new();
     private readonly Func<ITransport?>? _getBluetoothTransport = getBluetoothTransport;
     private readonly ILogger _logger = logger ?? NullLogger.Instance;
     private readonly ConcurrentDictionary<long, CompressedNetworkId> _pendingProfileNonces = new();
@@ -152,6 +153,8 @@ public sealed class LocalNetworkScanner(
         Require.NotNull(clients);
         var localPeer = _localPeer;
         var keepIds = new HashSet<CompressedNetworkId>();
+        foreach (var key in _messengerClientIds.Keys.ToArray())
+            _messengerClientIds.TryRemove(key, out _);
 
         foreach (var entry in clients)
         {
@@ -161,6 +164,7 @@ public sealed class LocalNetworkScanner(
                 continue;
 
             keepIds.Add(id);
+            _messengerClientIds[id] = 0;
             var lastSeen = entry.LastSeenUtc == default
                 ? DateTimeOffset.UtcNow
                 : entry.LastSeenUtc.ToUniversalTime();
@@ -172,9 +176,11 @@ public sealed class LocalNetworkScanner(
                 TransportKind.MessengerServer,
                 lastSeen,
                 PresencePingCodec.DefaultDataUdpPort,
-                MessengerServerOnline: entry.Online);
+                MessengerServerOnline: entry.Online,
+                AboutMe: entry.AboutMe ?? "",
+                IsBot: entry.IsBot);
             var stored = _entries.AddOrUpdate(id, peer, (_, existing) => MergeDiscoveredPeers(existing, peer));
-            if (entry.Online && stored.TransportKind == TransportKind.MessengerServer)
+            if (entry.Online && stored.TransportKind == TransportKind.MessengerServer && !stored.IsBot)
                 SchedulePeerProfileRequest(stored);
         }
 
@@ -182,9 +188,61 @@ public sealed class LocalNetworkScanner(
         {
             if (kv.Value.TransportKind != TransportKind.MessengerServer)
                 continue;
-            if (keepIds.Contains(kv.Key))
+            if (keepIds.Contains(kv.Key) || kv.Value.IsBot)
                 continue;
             _entries.TryRemove(kv.Key, out _);
+        }
+
+        RebuildSnapshot();
+        ClientsChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Replaces bot rows from GET /bots. Bot-only messenger placeholders not in <paramref name="bots"/> are removed.
+    /// A LAN/client row that is no longer a bot keeps its place and loses <see cref="DiscoveredLocalPeer.IsBot"/>.
+    /// </summary>
+    public void ApplyBotDirectory(IReadOnlyList<MessengerServerDirectoryEntry> bots)
+    {
+        Require.NotNull(bots);
+        var localPeer = _localPeer;
+        var keepIds = new HashSet<CompressedNetworkId>();
+
+        foreach (var entry in bots)
+        {
+            if (!CompressedNetworkId.TryParseShortString(entry.NetworkIdShort, out var id) || id.IsEmpty)
+                continue;
+            if (localPeer != null && id == localPeer.NetworkId)
+                continue;
+
+            keepIds.Add(id);
+            var nick = string.IsNullOrWhiteSpace(entry.Nickname) ? "" : entry.Nickname.Trim();
+            var about = entry.AboutMe?.Trim() ?? "";
+            var peer = new DiscoveredLocalPeer(
+                id,
+                nick,
+                MessengerServerPlaceholderAddress,
+                TransportKind.MessengerServer,
+                DateTimeOffset.UtcNow,
+                PresencePingCodec.DefaultDataUdpPort,
+                MessengerServerOnline: false,
+                AboutMe: about,
+                IsBot: true);
+            _entries.AddOrUpdate(id, peer, (_, existing) => MergeDiscoveredPeers(existing, peer));
+        }
+
+        foreach (var kv in _entries.ToArray())
+        {
+            if (!kv.Value.IsBot || keepIds.Contains(kv.Key))
+                continue;
+
+            if (kv.Value.TransportKind == TransportKind.MessengerServer &&
+                !_messengerClientIds.ContainsKey(kv.Key))
+            {
+                _entries.TryRemove(kv.Key, out _);
+                continue;
+            }
+
+            _entries[kv.Key] = kv.Value with { IsBot = false };
         }
 
         RebuildSnapshot();
@@ -566,9 +624,12 @@ public sealed class LocalNetworkScanner(
     private static DiscoveredLocalPeer MergeDiscoveredPeers(DiscoveredLocalPeer existing, DiscoveredLocalPeer incoming)
     {
         var lastSeen = incoming.LastSeenUtc > existing.LastSeenUtc ? incoming.LastSeenUtc : existing.LastSeenUtc;
-        var nick = !string.IsNullOrEmpty(existing.Nickname) ? existing.Nickname : incoming.Nickname;
+        var nick = incoming.IsBot && !string.IsNullOrEmpty(incoming.Nickname)
+            ? incoming.Nickname
+            : !string.IsNullOrEmpty(existing.Nickname) ? existing.Nickname : incoming.Nickname;
         var serverOnline = existing.MessengerServerOnline || incoming.MessengerServerOnline;
         var aboutMe = !string.IsNullOrEmpty(incoming.AboutMe) ? incoming.AboutMe : existing.AboutMe;
+        var isBot = existing.IsBot || incoming.IsBot;
 
         if (existing.TransportKind is TransportKind.Udp or TransportKind.Bluetooth &&
             incoming.TransportKind == TransportKind.MessengerServer)
@@ -578,7 +639,8 @@ public sealed class LocalNetworkScanner(
                 LastSeenUtc = lastSeen,
                 Nickname = nick,
                 MessengerServerOnline = incoming.MessengerServerOnline,
-                AboutMe = aboutMe
+                AboutMe = aboutMe,
+                IsBot = isBot
             };
         }
 
@@ -590,7 +652,8 @@ public sealed class LocalNetworkScanner(
                 LastSeenUtc = lastSeen,
                 Nickname = string.IsNullOrEmpty(incoming.Nickname) ? existing.Nickname : incoming.Nickname,
                 MessengerServerOnline = existing.MessengerServerOnline,
-                AboutMe = aboutMe
+                AboutMe = aboutMe,
+                IsBot = isBot
             };
         }
 
@@ -601,20 +664,23 @@ public sealed class LocalNetworkScanner(
                 LastSeenUtc = lastSeen,
                 Nickname = nick,
                 MessengerServerOnline = serverOnline,
-                AboutMe = aboutMe
+                AboutMe = aboutMe,
+                IsBot = isBot
             },
             TransportKind.Bluetooth when incoming.TransportKind == TransportKind.Udp => incoming with
             {
                 LastSeenUtc = lastSeen,
                 Nickname = string.IsNullOrEmpty(incoming.Nickname) ? existing.Nickname : incoming.Nickname,
                 MessengerServerOnline = serverOnline,
-                AboutMe = aboutMe
+                AboutMe = aboutMe,
+                IsBot = isBot
             },
             _ => (incoming.LastSeenUtc >= existing.LastSeenUtc ? incoming : existing) with
             {
                 Nickname = nick,
                 MessengerServerOnline = serverOnline,
-                AboutMe = aboutMe
+                AboutMe = aboutMe,
+                IsBot = isBot
             }
         };
     }

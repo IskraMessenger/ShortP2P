@@ -67,5 +67,15 @@ public sealed class LiteDbBotAccountRepository : IBotAccountRepository, IDisposa
         return Task.CompletedTask;
     }
 
+    public Task<IReadOnlyList<BotAccount>> ListAllAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_gate)
+        {
+            var list = _bots.FindAll().Select(doc => doc.ToDomain()).ToArray();
+            return Task.FromResult<IReadOnlyList<BotAccount>>(list);
+        }
+    }
+
     public void Dispose() => _db.Dispose();
 }
