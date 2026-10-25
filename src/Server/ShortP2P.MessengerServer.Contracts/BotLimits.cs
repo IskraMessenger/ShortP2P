@@ -17,4 +17,7 @@ public static class BotLimits
 
     /// <summary>Max length of optional end-to-end <c>correlationId</c> on client ↔ bot messages.</summary>
     public const int MaxCorrelationIdLength = 32;
+
+    /// <summary>Max length of bot message RSA public key JSON.</summary>
+    public const int MaxMessagePublicKeyLength = 16384;
 }

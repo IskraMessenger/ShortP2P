@@ -20,4 +20,10 @@ public sealed class BotRegisterRequest
     /// Stored by the server and checked on later <see cref="BotLoginRequest"/>.
     /// </summary>
     public required string FingerprintSha256 { get; init; }
+
+    /// <summary>
+    /// RSA public key JSON for client ↔ bot message encryption (same shape as ChatRequest <c>publicKey</c>).
+    /// Exposed to authorized clients via <see cref="BotCatalogDto"/>.
+    /// </summary>
+    public required string MessagePublicKey { get; init; }
 }

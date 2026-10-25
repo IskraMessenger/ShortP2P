@@ -19,8 +19,10 @@ public sealed class ListBotsUseCase(IBotAccountRepository accounts)
                 NetworkId = account.NetworkId.Trim(),
                 BotName = account.BotName.Trim(),
                 BotReadableName = account.BotReadableName.Trim(),
-                BotDescription = account.BotDescription.Trim()
+                BotDescription = account.BotDescription.Trim(),
+                MessagePublicKey = account.MessagePublicKey.Trim()
             })
+            .Where(dto => dto.MessagePublicKey.Length > 0)
             .ToArray();
     }
 

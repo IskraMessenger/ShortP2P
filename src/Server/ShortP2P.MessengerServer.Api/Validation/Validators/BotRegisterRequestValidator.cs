@@ -13,5 +13,8 @@ public sealed class BotRegisterRequestValidator : AbstractValidator<BotRegisterR
         RuleFor(x => x.BotReadableName).Cleartext(BotLimits.MaxBotReadableNameLength, "botReadableName");
         RuleFor(x => x.BotDescription).Cleartext(BotLimits.MaxBotDescriptionLength, "botDescription");
         RuleFor(x => x.FingerprintSha256).CertificateFingerprintSha256();
+        RuleFor(x => x.MessagePublicKey)
+            .RequiredTrimmed("messagePublicKey is required.")
+            .MaximumLength(BotLimits.MaxMessagePublicKeyLength);
     }
 }

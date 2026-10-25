@@ -183,6 +183,34 @@ public static class LanChatStartFromDiscovery
         if (servers == null)
             return LanChatStartResult.Failed("Messenger-серверы не подключены.");
 
+        if (peer.IsBot)
+        {
+            var botKey = peer.MessagePublicKey?.Trim() ?? "";
+            if (botKey.Length == 0)
+                return LanChatStartResult.Failed("У бота нет публичного ключа сообщений (обновите каталог: Скан).");
+
+            if (existing != null)
+            {
+                await chats.TryApplyBotCatalogKeyAsync(existing.Id, botKey).ConfigureAwait(false);
+                var fresh = await chats.GetChatAsync(existing.Id).ConfigureAwait(false);
+                return LanChatStartResult.AlreadyExists(fresh ?? existing);
+            }
+
+            var botNick = string.IsNullOrWhiteSpace(peer.Nickname) ? idShort : peer.Nickname.Trim();
+            var botChat = await chats.AddChatAsync(
+                    user.Id,
+                    botNick,
+                    idShort,
+                    botKey,
+                    idShort,
+                    user.DataUdpPort,
+                    remote: false,
+                    keySource: PeerKeySource.Server("bots"),
+                    isBot: true)
+                .ConfigureAwait(false);
+            return LanChatStartResult.Created(botChat);
+        }
+
         try
         {
             await servers.PublishChatRequestAsync(idShort, cancellationToken).ConfigureAwait(false);
