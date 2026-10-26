@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using ShortP2P.MessengerServer.Contracts;
 using ShortP2P.MessengerServer.Contracts.Dtos;
 using ShortP2P.MessengerServer.UseCases;
+using ShortP2P.MessengerServer.UseCases.Abstractions;
 using ShortP2P.MessengerServer.UseCases.BotServer;
 
 namespace ShortP2P.MessengerServer.Api.Controllers.Bot;
@@ -15,7 +16,8 @@ public sealed class BotServerInteractionController(
     LoginBotUseCase loginBot,
     RemoveBotUseCase removeBot,
     DeliverBotMessagesUseCase deliverBotMessages,
-    WaitForClientMessagesUseCase waitForClientMessages) : ControllerBase
+    WaitForClientMessagesUseCase waitForClientMessages,
+    ICryptoKeysRepository cryptoKeys) : ControllerBase
 {
     /// <summary>Register a bot. The bot key is returned once.</summary>
     [HttpPost("register")]
@@ -141,19 +143,32 @@ public sealed class BotServerInteractionController(
     {
         try
         {
+            var botId = request.BotNetworkId.Trim();
             var messages = await waitForClientMessages.ExecuteAsync(
-                new WaitForClientMessagesQuery(request.BotNetworkId, request.BotKey, request.TimeoutSeconds),
+                new WaitForClientMessagesQuery(botId, request.BotKey, request.TimeoutSeconds),
                 cancellationToken).ConfigureAwait(false);
+
+            var dtoList = new List<BotClientMessageDto>(messages.Count);
+            foreach (var m in messages)
+            {
+                var clientKey = await cryptoKeys
+                    .FindAsync(m.ClientNetworkId, botId, cancellationToken)
+                    .ConfigureAwait(false);
+                dtoList.Add(new BotClientMessageDto
+                {
+                    NetworkId = m.ClientNetworkId,
+                    EncryptedMessageBase64 = m.EncryptedMessageBase64,
+                    CorrelationId = m.CorrelationId,
+                    ClientMessagePublicKey = string.IsNullOrWhiteSpace(clientKey?.PublicKey)
+                        ? null
+                        : clientKey.PublicKey.Trim()
+                });
+            }
 
             return Ok(new BotWaitForIncomeMessagesResponse
             {
                 RequestId = request.RequestId.Trim(),
-                Messages = messages.Select(m => new BotClientMessageDto
-                {
-                    NetworkId = m.ClientNetworkId,
-                    EncryptedMessageBase64 = m.EncryptedMessageBase64,
-                    CorrelationId = m.CorrelationId
-                }).ToArray()
+                Messages = dtoList
             });
         }
         catch (UseCaseException ex)

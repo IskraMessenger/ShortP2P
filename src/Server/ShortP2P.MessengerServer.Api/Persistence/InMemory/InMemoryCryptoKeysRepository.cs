@@ -10,4 +10,14 @@ public sealed class InMemoryCryptoKeysRepository(InMemoryMessengerStore store) :
         store.CryptoKeys[(keys.SrcNetworkId, keys.TgtNetworkId)] = keys;
         return Task.CompletedTask;
     }
+
+    public Task<CryptoKeys?> FindAsync(
+        string srcNetworkId,
+        string tgtNetworkId,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        store.CryptoKeys.TryGetValue((srcNetworkId.Trim(), tgtNetworkId.Trim()), out var keys);
+        return Task.FromResult(keys);
+    }
 }

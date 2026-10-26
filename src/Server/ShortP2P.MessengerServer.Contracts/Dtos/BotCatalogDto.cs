@@ -12,5 +12,6 @@ public sealed class BotCatalogDto
     public required string BotDescription { get; init; }
 
     /// <summary>RSA public key JSON for encrypting client → bot payloads.</summary>
-    public required string MessagePublicKey { get; init; }
+    /// <remarks>Not <c>required</c>: older servers / partial JSON must deserialize; empty is filtered by list.</remarks>
+    public string MessagePublicKey { get; init; } = "";
 }

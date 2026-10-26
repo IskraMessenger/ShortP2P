@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>ShortP2P.MessengerServer.Contracts.Dtos</RootNamespace>
+    <AssemblyName>ShortP2P.MessengerServer.Shared</AssemblyName>
+    <Description>Shared messenger-server contract primitives (netstandard2.0) for net10 and net472.</Description>
+    <!-- TorgLink.WinForms builds as x86/x64; keep a single AnyCPU output so ProjectReference finds the DLL. -->
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <AppendPlatformToOutputPath>false</AppendPlatformToOutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <OutputPath>bin\$(Configuration)\$(TargetFramework)\</OutputPath>
+    <IntermediateOutputPath>obj\$(Configuration)\$(TargetFramework)\</IntermediateOutputPath>
+  </PropertyGroup>
+
+</Project>

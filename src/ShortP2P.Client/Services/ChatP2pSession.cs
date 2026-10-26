@@ -3205,14 +3205,40 @@ public sealed class ChatP2PSession : IAsyncDisposable
     private async Task<string?> TryServerDeliveryAsync(byte[] wire, CancellationToken cancellationToken)
     {
         var servers = _runtime.MessengerServers;
+        if (servers != null &&
+            (!_chat.IsBot || string.IsNullOrWhiteSpace(_chat.PeerRsaPublicJson)))
+        {
+            var ensured = await servers
+                .TryEnsureBotChatFromCatalogAsync(_chat.Id, cancellationToken)
+                .ConfigureAwait(false);
+            if (ensured != null)
+                ApplyChatRow(ensured);
+        }
+
         if (_chat.IsBot)
         {
             if (servers == null)
+            {
+                _logger.LogError("Chat {ChatId}: bot deliver — messenger servers not connected", _chat.Id);
                 throw new InvalidOperationException("Messenger-серверы не подключены.");
+            }
+
+            _logger.LogDebug(
+                "Chat {ChatId}: TryServerDelivery bot path peer={PeerId} wireLen={WireLen}",
+                _chat.Id, _chat.PeerNetworkIdShort, wire.Length);
             var botAccepted = await servers.TryDeliverBotWireAsync(_chat, _user, wire, cancellationToken)
                 .ConfigureAwait(false);
             if (!string.IsNullOrEmpty(botAccepted))
+            {
+                _logger.LogDebug(
+                    "Chat {ChatId}: bot deliver OK serverMessageId={ServerMessageId}",
+                    _chat.Id, botAccepted);
                 return botAccepted;
+            }
+
+            _logger.LogError(
+                "Chat {ChatId}: bot deliver failed peer={PeerId}",
+                _chat.Id, _chat.PeerNetworkIdShort);
             throw new InvalidOperationException("Не удалось доставить сообщение боту через messenger-сервер.");
         }
 
@@ -3226,10 +3252,19 @@ public sealed class ChatP2PSession : IAsyncDisposable
             return null;
         }
 
+        _logger.LogDebug(
+            "Chat {ChatId}: TryServerDelivery human path peer={PeerId} wireLen={WireLen}",
+            _chat.Id, _chat.PeerNetworkIdShort, wire.Length);
         var acceptedId = await servers.TryDeliverWireAsync(_chat, _user, wire, cancellationToken)
             .ConfigureAwait(false);
         if (!string.IsNullOrEmpty(acceptedId))
+        {
+            _logger.LogDebug(
+                "Chat {ChatId}: human deliver OK serverMessageId={ServerMessageId}",
+                _chat.Id, acceptedId);
             return acceptedId;
+        }
+
         if (_deliveryPath == ChatDeliveryPath.Server)
             throw new InvalidOperationException("Абонент не найден на доступных messenger-серверах.");
         return null;

@@ -10,5 +10,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="ShortP2P.TrustSystem.Fx48.csproj" />
+    <ProjectReference Include="..\ShortP2P.MessengerServer.Shared\ShortP2P.MessengerServer.Shared.csproj" />
   </ItemGroup>
 </Project>

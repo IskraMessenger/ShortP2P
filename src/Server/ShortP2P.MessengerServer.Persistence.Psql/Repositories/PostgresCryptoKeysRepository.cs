@@ -22,4 +22,18 @@ public sealed class PostgresCryptoKeysRepository(MessengerDbContext db) : ICrypt
 
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
+
+    public async Task<CryptoKeys?> FindAsync(
+        string srcNetworkId,
+        string tgtNetworkId,
+        CancellationToken cancellationToken = default)
+    {
+        var src = srcNetworkId.Trim();
+        var tgt = tgtNetworkId.Trim();
+        var row = await db.CryptoKeys
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.SrcNetworkId == src && x.TgtNetworkId == tgt, cancellationToken)
+            .ConfigureAwait(false);
+        return row?.ToDomain();
+    }
 }
