@@ -143,7 +143,7 @@
 | Сторона | DTO | Поля |
 |---------|-----|------|
 | Клиент → сервер | `BotSendMessageRequest` | `messageId`, `networkId` (бот), `dateTime`, `message`, опционально `correlationId` |
-| Сервер → клиент | `BotSendMessageResponse` | `messageId`, `errorCode` (0/1/2), `errorMessage` |
+| Сервер → клиент | `BotSendMessageResponse` | `messageId`, `errorCode` (`Success` / `InternalError` / `WrongInput`), `errorMessage` |
 
 ### Receipts
 

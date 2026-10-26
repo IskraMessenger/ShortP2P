@@ -75,7 +75,7 @@ public sealed class BotClientInteractionController(
             return Ok(new BotSendMessageResponse
             {
                 MessageId = request.MessageId,
-                ErrorCode = 0,
+                ErrorCode = ErrorCode.Success,
                 ErrorMessage = string.Empty
             });
         }
@@ -84,7 +84,7 @@ public sealed class BotClientInteractionController(
             return Ok(new BotSendMessageResponse
             {
                 MessageId = request.MessageId ?? string.Empty,
-                ErrorCode = 2,
+                ErrorCode = ErrorCode.WrongInput,
                 ErrorMessage = ex.Message
             });
         }
@@ -92,8 +92,8 @@ public sealed class BotClientInteractionController(
         {
             return Ok(new BotSendMessageResponse
             {
-                MessageId = request.MessageId ?? string.Empty,
-                ErrorCode = 1,
+                MessageId = request.MessageId,
+                ErrorCode = ErrorCode.InternalError,
                 ErrorMessage = ex.Message
             });
         }

@@ -560,7 +560,7 @@ paths:
               $ref: '#/components/schemas/BotSendMessageRequest'
       responses:
         '200':
-          description: Acknowledgement (errorCode 0 = success, 1 = internal, 2 = wrong input / bot missing)
+          description: Acknowledgement (errorCode Success, InternalError, or WrongInput)
           content:
             application/json:
               schema:
@@ -934,6 +934,14 @@ components:
           maxLength: 32
           nullable: true
 
+    ErrorCode:
+      type: string
+      enum: [Success, InternalError, WrongInput]
+      description: >
+        Success — the message was accepted.
+        InternalError — internal error.
+        WrongInput — wrong input, or the destination bot was not found.
+
     BotSendMessageResponse:
       type: object
       required: [messageId, errorCode, errorMessage]
@@ -941,8 +949,7 @@ components:
         messageId:
           type: string
         errorCode:
-          type: integer
-          description: 0 = success, 1 = internal error, 2 = wrong input / bot not found
+          $ref: '#/components/schemas/ErrorCode'
         errorMessage:
           type: string
 
