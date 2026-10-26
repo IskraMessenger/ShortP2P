@@ -29,7 +29,8 @@ public class RegisterLoginBotUseCaseTests
             "echo",
             "Echo Bot",
             "desc",
-            separated));
+            separated,
+            "{\"k\":\"bot-pub\"}"));
 
         Assert.Equal(FixedBotKey, result.BotKey);
         Assert.Equal(ServerFingerprint, result.ServerFingerprintSha256);
@@ -37,6 +38,7 @@ public class RegisterLoginBotUseCaseTests
         var stored = await h.Bots.FindByNetworkIdAsync("bot-net");
         Assert.NotNull(stored);
         Assert.Equal(BotFingerprint, stored.CertificateFingerprintSha256);
+        Assert.Equal("{\"k\":\"bot-pub\"}", stored.MessagePublicKey);
     }
 
     [Fact]
@@ -44,7 +46,7 @@ public class RegisterLoginBotUseCaseTests
     {
         var h = new Harness();
         await h.Register().ExecuteAsync(new RegisterBotCommand(
-            "bot-net", "echo", "Echo Bot", "desc", BotFingerprint));
+            "bot-net", "echo", "Echo Bot", "desc", BotFingerprint, "{\"k\":\"bot-pub\"}"));
 
         var login = await h.Login().ExecuteAsync(new LoginBotCommand(
             "bot-net", "echo", FixedBotKey, BotFingerprint.ToUpperInvariant()));
@@ -58,7 +60,7 @@ public class RegisterLoginBotUseCaseTests
     {
         var h = new Harness();
         await h.Register().ExecuteAsync(new RegisterBotCommand(
-            "bot-net", "echo", "Echo Bot", "desc", BotFingerprint));
+            "bot-net", "echo", "Echo Bot", "desc", BotFingerprint, "{\"k\":\"bot-pub\"}"));
 
         var ex = await Assert.ThrowsAsync<UseCaseException>(() =>
             h.Login().ExecuteAsync(new LoginBotCommand(

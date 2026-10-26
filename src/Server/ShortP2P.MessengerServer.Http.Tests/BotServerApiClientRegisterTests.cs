@@ -41,7 +41,8 @@ public sealed class BotServerApiClientRegisterTests : IDisposable
             BotName = "echo",
             BotReadableName = "Echo Bot",
             BotDescription = "test",
-            FingerprintSha256 = botCert.FingerprintSha256ColonSeparated
+            FingerprintSha256 = botCert.FingerprintSha256ColonSeparated,
+            MessagePublicKey = "{\"k\":\"bot-pub\"}"
         });
 
         var sent = _host.ReadJson<BotRegisterRequest>("POST", ApiRoutes.BotServerRegister);
@@ -71,7 +72,8 @@ public sealed class BotServerApiClientRegisterTests : IDisposable
                 BotName = "echo",
                 BotReadableName = "Echo Bot",
                 BotDescription = "test",
-                FingerprintSha256 = botCert.FingerprintSha256
+                FingerprintSha256 = botCert.FingerprintSha256,
+                MessagePublicKey = "{\"k\":\"bot-pub\"}"
             }));
 
         Assert.Equal(HttpStatusCode.BadRequest, ex.StatusCode);

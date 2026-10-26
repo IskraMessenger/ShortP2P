@@ -101,6 +101,7 @@ public sealed class UserP2pRuntime : IAsyncDisposable
             {
                 var bots = await MessengerServers.ProbeAndListRemoteBotsAsync(ct).ConfigureAwait(false);
                 LocalScan.ApplyBotDirectory(MessengerServerSyncService.ToBotDirectoryEntries(bots));
+                await MessengerServers.SyncBotKeysFromCatalogAsync(bots, ct).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {

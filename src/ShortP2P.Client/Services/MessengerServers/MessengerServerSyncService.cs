@@ -49,6 +49,7 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
 
     private CancellationTokenSource? _cts;
     private Task? _longPollLoop;
+    private Task? _botPollLoop;
     private Task? _pingLoop;
     private Task? _ratingLoop;
     private bool _started;
@@ -87,6 +88,7 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
             _manager.FailoverCompleted -= OnFailoverCompleted;
             _manager.FailoverCompleted += OnFailoverCompleted;
             _longPollLoop = Task.Run(() => LongPollSupervisorAsync(token), token);
+            _botPollLoop = Task.Run(() => BotLongPollSupervisorAsync(token), token);
             _pingLoop = Task.Run(() => PingLoopAsync(token), token);
             _ratingLoop = Task.Run(() => TrustRatingLoopAsync(token), token);
             _started = true;
@@ -97,6 +99,7 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
     {
         CancellationTokenSource? cts;
         Task? longPoll;
+        Task? botPoll;
         Task? pingLoop;
         Task? ratingLoop;
         lock (_startGate)
@@ -106,10 +109,12 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
             _started = false;
             cts = _cts;
             longPoll = _longPollLoop;
+            botPoll = _botPollLoop;
             pingLoop = _pingLoop;
             ratingLoop = _ratingLoop;
             _cts = null;
             _longPollLoop = null;
+            _botPollLoop = null;
             _pingLoop = null;
             _ratingLoop = null;
             _manager.FailoverCompleted -= OnFailoverCompleted;
@@ -128,6 +133,7 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
         }
 
         await WaitIgnoreCancelAsync(longPoll).ConfigureAwait(false);
+        await WaitIgnoreCancelAsync(botPoll).ConfigureAwait(false);
         await WaitIgnoreCancelAsync(pingLoop).ConfigureAwait(false);
         await WaitIgnoreCancelAsync(ratingLoop).ConfigureAwait(false);
         cts?.Dispose();
@@ -236,10 +242,35 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
                 false,
                 DateTimeOffset.UtcNow,
                 true,
-                bot.BotDescription?.Trim() ?? "");
+                bot.BotDescription?.Trim() ?? "",
+                bot.MessagePublicKey?.Trim() ?? "");
         }
 
         return list;
+    }
+
+    /// <summary>Refresh PeerRsaPublicJson / IsBot on existing chats from GET /bots.</summary>
+    public async Task SyncBotKeysFromCatalogAsync(
+        IReadOnlyList<BotCatalogDto> bots,
+        CancellationToken cancellationToken = default)
+    {
+        var user = _auth.CurrentUser;
+        if (user == null || bots.Count == 0)
+            return;
+
+        foreach (var bot in bots)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var id = bot.NetworkId.Trim();
+            var pub = bot.MessagePublicKey?.Trim() ?? "";
+            if (id.Length == 0 || pub.Length == 0)
+                continue;
+
+            var chat = await _chats.FindChatByPeerNetworkIdAsync(user.Id, id).ConfigureAwait(false);
+            if (chat == null)
+                continue;
+            await _chats.TryApplyBotCatalogKeyAsync(chat.Id, pub).ConfigureAwait(false);
+        }
     }
 
     /// <summary>Obsolete name kept for call sites; prefers GetClients probe.</summary>
@@ -539,6 +570,14 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
         if (peerId.Length == 0)
             return null;
 
+        if (latest.IsBot)
+        {
+            _logger.LogInformation(
+                "Send skipped: chat {ChatId} is a bot — use TryDeliverBotWireAsync",
+                latest.Id);
+            return null;
+        }
+
         var targets = await CollectPeerServerTargetsAsync(peerId, cancellationToken).ConfigureAwait(false);
         if (targets.Count == 0)
         {
@@ -581,6 +620,115 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 _logger.LogWarning(ex, "SendMessage failed on {BaseUrl}", conn.Entity.BaseUrl);
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Bot chats only: encrypt ChatWire with the bot catalog RSA key and POST bot_client_interaction/send_message.
+    /// </summary>
+    public async Task<string?> TryDeliverBotWireAsync(
+        ChatEntity chat,
+        UserEntity user,
+        byte[] wire,
+        CancellationToken cancellationToken = default)
+    {
+        Require.NotNull(chat);
+        Require.NotNull(user);
+        Require.NotNull(wire);
+
+        var latest = await _chats.GetChatAsync(chat.Id).ConfigureAwait(false) ?? chat;
+        if (!latest.IsBot)
+        {
+            _logger.LogInformation("Bot send skipped: chat {ChatId} is not a bot", latest.Id);
+            return null;
+        }
+
+        if (string.IsNullOrWhiteSpace(latest.PeerRsaPublicJson))
+        {
+            _logger.LogInformation("Bot send skipped: no bot public key for chat {ChatId}", latest.Id);
+            return null;
+        }
+
+        RsaPublicKey botKey;
+        try
+        {
+            botKey = RsaKeySerializer.DeserializePublic(latest.PeerRsaPublicJson);
+        }
+        catch
+        {
+            return null;
+        }
+
+        string encrypted;
+        try
+        {
+            encrypted = MessengerServerPayloadCodec.EncryptToBase64(wire, botKey);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to encrypt bot payload for chat {ChatId}", latest.Id);
+            return null;
+        }
+
+        var botId = ChatRepository.CanonicalPeerNetworkId(latest.PeerNetworkIdShort);
+        if (botId.Length == 0)
+            return null;
+
+        var ready = await _manager.EnsureAllActiveReadyAsync(cancellationToken).ConfigureAwait(false);
+        var targets = _manager.OrderConnectionsForDelivery(ready)
+            .Where(c => _manager.AllowsTraffic(c))
+            .ToArray();
+        if (targets.Length == 0)
+        {
+            _logger.LogInformation("Bot send skipped: no ready trusted messenger server for bot {BotId}", botId);
+            return null;
+        }
+
+        var messageId = Guid.NewGuid().ToString("N");
+        var request = new BotSendMessageRequest
+        {
+            MessageId = messageId,
+            NetworkId = botId,
+            DateTime = DateTime.UtcNow,
+            Message = encrypted
+        };
+
+        foreach (var conn in targets)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!_manager.AllowsTraffic(conn))
+                continue;
+            try
+            {
+                using var sendCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                sendCts.CancelAfter(SendMessageHttpTimeout);
+                var response = await TrackAsync(
+                        conn,
+                        () => conn.Api.SendMessageToBotAsync(request, sendCts.Token))
+                    .ConfigureAwait(false);
+                if (response.ErrorCode != 0)
+                {
+                    _logger.LogWarning(
+                        "SendMessageToBot ErrorCode={Code} on {BaseUrl}: {Message}",
+                        response.ErrorCode,
+                        conn.Entity.BaseUrl,
+                        response.ErrorMessage);
+                    continue;
+                }
+
+                return string.IsNullOrWhiteSpace(response.MessageId) ? messageId : response.MessageId.Trim();
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                _logger.LogWarning("SendMessageToBot timed out on {BaseUrl}", conn.Entity.BaseUrl);
+                _manager.RecordRequestFailure(conn.Entity.Id);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogWarning(ex, "SendMessageToBot failed on {BaseUrl}", conn.Entity.BaseUrl);
             }
         }
 
@@ -1018,6 +1166,175 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
                 {
                     break;
                 }
+            }
+        }
+    }
+
+    private async Task BotLongPollSupervisorAsync(CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                var user = _auth.CurrentUser;
+                if (user == null)
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken).ConfigureAwait(false);
+                    continue;
+                }
+
+                var ready = await _manager.EnsureAllActiveReadyAsync(cancellationToken).ConfigureAwait(false);
+                var pollTargets = ready.Where(c => _manager.AllowsTraffic(c)).ToArray();
+                if (pollTargets.Length == 0)
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(3), cancellationToken).ConfigureAwait(false);
+                    continue;
+                }
+
+                var degree = Clamp(pollTargets.Length, 1, MaxLongPollWorkers);
+                var selected = pollTargets.Take(degree).ToArray();
+                var workers = selected
+                    .Select(conn => BotLongPollServerLoopAsync(conn, user, cancellationToken))
+                    .ToArray();
+
+                await Task.WhenAll(workers).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Messenger server bot long-poll supervisor failed");
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+            }
+        }
+    }
+
+    private async Task BotLongPollServerLoopAsync(
+        MessengerServerConnection connection,
+        UserEntity user,
+        CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            if (!_manager.AllowsTraffic(connection))
+                break;
+
+            try
+            {
+                var inbox = await TrackAsync(
+                        connection,
+                        () => connection.LongPollApi.WaitForBotMessagesAsync(
+                            new BotWaitForMessagesRequest
+                            {
+                                NetworkId = user.NetworkIdShort.Trim(),
+                                TimeoutSeconds = LongPollTimeoutSeconds
+                            },
+                            cancellationToken))
+                    .ConfigureAwait(false);
+
+                if (inbox.Messages is { Count: > 0 })
+                    await ProcessIncomingBotMessagesAsync(connection, user, inbox.Messages, cancellationToken)
+                        .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogDebug(ex, "Bot wait_for_messages failed on {BaseUrl}", connection.Entity.BaseUrl);
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+            }
+        }
+    }
+
+    private async Task ProcessIncomingBotMessagesAsync(
+        MessengerServerConnection connection,
+        UserEntity user,
+        IReadOnlyList<BotClientInboundMessageDto> messages,
+        CancellationToken cancellationToken)
+    {
+        if (!_manager.AllowsTraffic(connection) || messages.Count == 0)
+            return;
+
+        var privateKey = _auth.GetCurrentPrivateKey();
+        foreach (var message in messages)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var messageId = message.MessageId?.Trim() ?? "";
+            var botId = message.BotNetworkId?.Trim() ?? "";
+            if (messageId.Length == 0 || botId.Length == 0)
+                continue;
+
+            byte[] wire;
+            try
+            {
+                wire = MessengerServerPayloadCodec.DecryptFromBase64(message.Message, privateKey);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to decrypt bot message {MessageId}", messageId);
+                continue;
+            }
+
+            await _ingestGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                var chat = await _chats.FindChatByPeerNetworkIdAsync(user.Id, botId).ConfigureAwait(false);
+                if (chat == null || !chat.IsBot)
+                {
+                    _logger.LogDebug(
+                        "Skipping bot message {MessageId}: no local bot chat for {BotId}",
+                        messageId,
+                        botId);
+                    continue;
+                }
+
+                var blocked = await _chats.IsPeerBlockedAsync(user.Id, botId, cancellationToken)
+                    .ConfigureAwait(false);
+                var isNew = await _chats.TryClaimServerMessageAsync(messageId).ConfigureAwait(false);
+                if (isNew)
+                {
+                    await PersistIncomingServerWireAsync(
+                            chat, wire, blocked, connection.Entity.BaseUrl, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+            }
+            finally
+            {
+                _ingestGate.Release();
+            }
+
+            // Ack on every server that delivered a copy, even if we already ingested it once.
+            try
+            {
+                await TrackAsync(connection, () => connection.Api.SubmitBotMessageReceiptAsync(
+                    new BotMessageReceiptRequest
+                    {
+                        MessageId = messageId,
+                        ReceivedAtUtc = DateTime.UtcNow
+                    },
+                    cancellationToken)).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogDebug(ex, "Bot message receipt failed for {MessageId}", messageId);
             }
         }
     }

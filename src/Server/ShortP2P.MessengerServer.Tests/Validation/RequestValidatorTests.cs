@@ -81,9 +81,26 @@ public class RequestValidatorTests
             BotName = "echo",
             BotReadableName = "Echo",
             BotDescription = "desc",
-            FingerprintSha256 = "short"
+            FingerprintSha256 = "short",
+            MessagePublicKey = "{\"k\":\"bot-pub\"}"
         });
         Assert.False(result.IsValid);
+    }
+
+    [Fact]
+    public async Task BotRegisterRequest_WhenMessagePublicKeyMissing_IsInvalid()
+    {
+        var result = await new BotRegisterRequestValidator().ValidateAsync(new BotRegisterRequest
+        {
+            NetworkId = "bot-net",
+            BotName = "echo",
+            BotReadableName = "Echo",
+            BotDescription = "desc",
+            FingerprintSha256 = new string('a', 64),
+            MessagePublicKey = "   "
+        });
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.PropertyName == nameof(BotRegisterRequest.MessagePublicKey));
     }
 
     [Fact]

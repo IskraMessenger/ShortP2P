@@ -506,6 +506,7 @@ public sealed class ChatP2PSession : IAsyncDisposable
         _chat.PeerKeySourceDetail = row.PeerKeySourceDetail;
         _chat.RelayRouteBlob = row.RelayRouteBlob;
         _chat.DeliveryPath = row.DeliveryPath;
+        _chat.IsBot = row.IsBot;
         _chat.UpdatedUtcTicks = row.UpdatedUtcTicks;
         AdoptStoredDeliveryPath();
         _logger.LogInformation(
@@ -572,6 +573,19 @@ public sealed class ChatP2PSession : IAsyncDisposable
 
             _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             ResetOutboundCts();
+
+            if (_chat.IsBot)
+            {
+                // Bots use BotClientInteraction only — no ChatRequest, UDP invite, or mesh crypto.
+                _deliveryPath = ChatDeliveryPath.Server;
+                _udpFallbackApplied = 1;
+                _udpOutboundUnavailable = true;
+                _startInProgress = false;
+                _startFinished = true;
+                RefreshHandshakeStatus();
+                LogSessionRoleContext("Bot session ready (server-only)");
+                return;
+            }
 
             SubscribeToTransceivers();
 
@@ -3190,10 +3204,21 @@ public sealed class ChatP2PSession : IAsyncDisposable
     /// <returns>Server message id, or null to continue on the mesh path. Server mode throws instead of falling through.</returns>
     private async Task<string?> TryServerDeliveryAsync(byte[] wire, CancellationToken cancellationToken)
     {
+        var servers = _runtime.MessengerServers;
+        if (_chat.IsBot)
+        {
+            if (servers == null)
+                throw new InvalidOperationException("Messenger-серверы не подключены.");
+            var botAccepted = await servers.TryDeliverBotWireAsync(_chat, _user, wire, cancellationToken)
+                .ConfigureAwait(false);
+            if (!string.IsNullOrEmpty(botAccepted))
+                return botAccepted;
+            throw new InvalidOperationException("Не удалось доставить сообщение боту через messenger-сервер.");
+        }
+
         if (_deliveryPath == ChatDeliveryPath.Mesh)
             return null;
 
-        var servers = _runtime.MessengerServers;
         if (servers == null)
         {
             if (_deliveryPath == ChatDeliveryPath.Server)

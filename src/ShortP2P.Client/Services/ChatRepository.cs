@@ -169,7 +169,7 @@ public sealed class ChatRepository(AppDatabase appDatabase, PeerBlacklist? black
 
     public async Task<ChatEntity> AddChatAsync(int userId, string peerNickname, string peerNetworkIdShort,
         string peerRsaPublicJson, string peerHost, int peerPort, bool remote = false,
-        PeerKeySource? keySource = null)
+        PeerKeySource? keySource = null, bool isBot = false)
     {
         await _addChatGate.WaitAsync().ConfigureAwait(false);
         try
@@ -193,12 +193,14 @@ public sealed class ChatRepository(AppDatabase appDatabase, PeerBlacklist? black
                                          StringComparison.Ordinal) ||
                                      !string.Equals(existing.PeerKeySourceDetail ?? "",
                                          keySource.Value.Detail ?? "", StringComparison.Ordinal));
+                var botFlagChanged = isBot && !existing.IsBot;
                 var changed =
                     !string.Equals(mergedHost, existing.PeerHost, StringComparison.Ordinal) ||
                     existing.PeerPort != peerPort ||
                     !string.Equals(mergedEndpoints, existing.PeerEndpointsJson ?? "", StringComparison.Ordinal) ||
                     pubChanged ||
                     nickChanged ||
+                    botFlagChanged ||
                     (pubChanged && sourceChanged) ||
                     (existing.PeerKeySourceKind is null or "" && keySource.HasValue) ||
                     !string.IsNullOrEmpty(existing.RelayRouteBlob);
@@ -216,6 +218,8 @@ public sealed class ChatRepository(AppDatabase appDatabase, PeerBlacklist? black
                     existing.PeerRsaPublicJson = newPub;
                 if (nickChanged)
                     existing.PeerNickname = preferredNick;
+                if (isBot)
+                    existing.IsBot = true;
                 if (keySource.HasValue &&
                     (pubChanged || string.IsNullOrWhiteSpace(existing.PeerKeySourceKind)))
                 {
@@ -225,7 +229,7 @@ public sealed class ChatRepository(AppDatabase appDatabase, PeerBlacklist? black
 
                 existing.RelayRouteBlob = null;
                 existing.UpdatedUtcTicks = DateTime.UtcNow.Ticks;
-                if (nickChanged)
+                if (nickChanged || botFlagChanged)
                 {
                     var connUpdate = await _db.GetConnectionAsync().ConfigureAwait(false);
                     await connUpdate.UpdateAsync(existing).ConfigureAwait(false);
@@ -247,6 +251,7 @@ public sealed class ChatRepository(AppDatabase appDatabase, PeerBlacklist? black
                 PeerEndpointsJson = MergePeerEndpoints(null, peerHost, peerPort),
                 PeerKeySourceKind = keySource?.Kind,
                 PeerKeySourceDetail = keySource?.Detail,
+                IsBot = isBot,
                 UpdatedUtcTicks = DateTime.UtcNow.Ticks
             };
             await conn.InsertAsync(chat);
@@ -478,6 +483,35 @@ public sealed class ChatRepository(AppDatabase appDatabase, PeerBlacklist? black
     public Task UpdateChatDeliveryPathAsync(int chatId, int deliveryPath) =>
         _db.WriteAsync(conn => conn.ExecuteAsync(
             "UPDATE chats SET DeliveryPath = ? WHERE Id = ?", deliveryPath, chatId));
+
+    /// <summary>Marks a chat as bot and refreshes its message public key when the catalog key changed.</summary>
+    public async Task<bool> TryApplyBotCatalogKeyAsync(int chatId, string messagePublicKey)
+    {
+        var pub = messagePublicKey?.Trim() ?? "";
+        if (pub.Length == 0)
+            return false;
+
+        var conn = await _db.GetConnectionAsync().ConfigureAwait(false);
+        var chat = await conn.FindAsync<ChatEntity>(chatId).ConfigureAwait(false);
+        if (chat == null)
+            return false;
+
+        var pubChanged = !SafetyNumber.PublicKeyJsonEquals(chat.PeerRsaPublicJson, pub);
+        var flagChanged = !chat.IsBot;
+        if (!pubChanged && !flagChanged)
+            return false;
+
+        var previous = chat.PeerRsaPublicJson;
+        chat.IsBot = true;
+        chat.PeerRsaPublicJson = pub;
+        chat.PeerKeySourceKind = PeerKeySource.Server("bots").Kind;
+        chat.PeerKeySourceDetail = PeerKeySource.Server("bots").Detail;
+        chat.UpdatedUtcTicks = DateTime.UtcNow.Ticks;
+        await conn.UpdateAsync(chat).ConfigureAwait(false);
+        if (pubChanged && !string.IsNullOrWhiteSpace(previous))
+            RaisePeerPublicKeyChanged(chat, previous, pub);
+        return true;
+    }
 
     public async Task UpdateChatP2pRouteAsync(int chatId, string peerHost, int peerPort, string? relayRouteBlob,
         string? peerRsaPublicJson = null, PeerKeySource? keySource = null)
