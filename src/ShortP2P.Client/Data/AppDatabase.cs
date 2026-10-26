@@ -178,6 +178,9 @@ public sealed class AppDatabase
         await TryAlterAsync(connection, "ALTER TABLE chats ADD COLUMN IsBot INTEGER NOT NULL DEFAULT 0")
             .ConfigureAwait(false);
         await TryAlterAsync(connection,
+                "ALTER TABLE chats ADD COLUMN BotCatalogChecked INTEGER NOT NULL DEFAULT 0")
+            .ConfigureAwait(false);
+        await TryAlterAsync(connection,
             "ALTER TABLE messages ADD COLUMN DeliveryStatus INTEGER NOT NULL DEFAULT 2").ConfigureAwait(false);
         try
         {

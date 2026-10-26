@@ -274,17 +274,34 @@ public sealed class ChatP2PSession
         if (latest != null)
             ApplyChatRow(latest);
 
-        if (!_chat.IsBot)
+        if (MessengerServerSyncService.NeedsBotCatalogLookup(_chat))
         {
-            try
-            {
-                await _servers.PublishChatRequestAsync(_chat.PeerNetworkIdShort, cancellationToken)
-                    .ConfigureAwait(false);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                _logger?.LogDebug(ex, "Chat {ChatId}: PublishChatRequest on start", _chat.Id);
-            }
+            var ensured = await _servers
+                .TryEnsureBotChatFromCatalogAsync(_chat.Id, cancellationToken)
+                .ConfigureAwait(false);
+            if (ensured != null)
+                ApplyChatRow(ensured);
+        }
+
+        _logger?.LogDebug(
+            "Chat {ChatId}: StartAsync peer={PeerId} IsBot={IsBot} hasPeerKey={HasKey} catalogChecked={Checked}",
+            _chat.Id,
+            _chat.PeerNetworkIdShort,
+            _chat.IsBot,
+            !string.IsNullOrWhiteSpace(_chat.PeerRsaPublicJson),
+            _chat.BotCatalogChecked);
+
+        // Also for bots: ChatRequest stores our RSA public key so the bot can encrypt replies.
+        try
+        {
+            await _servers.PublishChatRequestAsync(_chat.PeerNetworkIdShort, cancellationToken)
+                .ConfigureAwait(false);
+            _logger?.LogDebug("Chat {ChatId}: PublishChatRequest sent for {PeerId} IsBot={IsBot}",
+                _chat.Id, _chat.PeerNetworkIdShort, _chat.IsBot);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger?.LogError(ex, "Chat {ChatId}: PublishChatRequest on start failed", _chat.Id);
         }
 
         await EnqueueExistingPendingAsync(cancellationToken).ConfigureAwait(false);
@@ -303,6 +320,10 @@ public sealed class ChatP2PSession
             .AddMessageAsync(_chat.Id, true, text, MessageDeliveryStatus.Pending)
             .ConfigureAwait(false);
         RaiseMessagesChanged();
+
+        _logger?.LogDebug(
+            "Chat {ChatId}: SendText queued messageId={MessageId} chars={Len} IsBot={IsBot} peer={PeerId}",
+            _chat.Id, messageId, text.Length, _chat.IsBot, _chat.PeerNetworkIdShort);
 
         // Await flush so WinForms SendAsync sees delivery errors and debugger can step into deliver.
         await EnqueueAndFlushAsync(messageId, cancellationToken).ConfigureAwait(false);
@@ -499,8 +520,8 @@ public sealed class ChatP2PSession
                     // No peer key / no ready server yet — leave Pending in DB, drop from the
                     // in-memory queue so we do not spin. ApplyChatRow / StartAsync re-enqueue.
                     _logger?.LogDebug(ex,
-                        "Chat {ChatId}: deferring outbound message {MessageId}",
-                        _chat.Id, nextId);
+                        "Chat {ChatId}: deferring outbound message {MessageId} IsBot={IsBot}",
+                        _chat.Id, nextId, _chat.IsBot);
                     DequeuePendingOutgoingHead(nextId);
                     if (_chat.IsBot)
                         throw;
@@ -508,9 +529,9 @@ public sealed class ChatP2PSession
                 }
                 catch (Exception ex)
                 {
-                    _logger?.LogWarning(ex,
-                        "Chat {ChatId}: outbound delivery failed for message {MessageId}",
-                        _chat.Id, nextId);
+                    _logger?.LogError(ex,
+                        "Chat {ChatId}: outbound delivery failed for message {MessageId} IsBot={IsBot}",
+                        _chat.Id, nextId, _chat.IsBot);
                     try
                     {
                         await _repo
@@ -566,6 +587,26 @@ public sealed class ChatP2PSession
         if (latest != null)
             ApplyChatRow(latest);
 
+        // Existing rows may have been created as human (no IsBot / no catalog key).
+        if (MessengerServerSyncService.NeedsBotCatalogLookup(_chat))
+        {
+            var ensured = await _servers
+                .TryEnsureBotChatFromCatalogAsync(_chat.Id, cancellationToken)
+                .ConfigureAwait(false);
+            if (ensured != null)
+                ApplyChatRow(ensured);
+        }
+
+        _logger?.LogDebug(
+            "Chat {ChatId}: DeliverOutgoing messageId={MessageId} wireLen={WireLen} IsBot={IsBot} peer={PeerId} hasPeerKey={HasKey} catalogChecked={Checked}",
+            _chat.Id,
+            messageId,
+            wire.Length,
+            _chat.IsBot,
+            _chat.PeerNetworkIdShort,
+            !string.IsNullOrWhiteSpace(_chat.PeerRsaPublicJson),
+            _chat.BotCatalogChecked);
+
         string? acceptedId;
         if (_chat.IsBot)
         {
@@ -574,6 +615,9 @@ public sealed class ChatP2PSession
                 .ConfigureAwait(false);
             if (string.IsNullOrEmpty(acceptedId))
             {
+                _logger?.LogError(
+                    "Chat {ChatId}: bot deliver returned null for messageId={MessageId} peer={PeerId}",
+                    _chat.Id, messageId, _chat.PeerNetworkIdShort);
                 throw new InvalidOperationException(
                     "Не удалось доставить сообщение боту через messenger-сервер.");
             }
@@ -585,10 +629,17 @@ public sealed class ChatP2PSession
                 .ConfigureAwait(false);
             if (string.IsNullOrEmpty(acceptedId))
             {
+                _logger?.LogDebug(
+                    "Chat {ChatId}: human deliver not ready for messageId={MessageId} peer={PeerId}",
+                    _chat.Id, messageId, _chat.PeerNetworkIdShort);
                 throw new OutboundNotReadyException(
                     "Messenger server did not accept the message (no peer key or no ready server).");
             }
         }
+
+        _logger?.LogDebug(
+            "Chat {ChatId}: deliver OK messageId={MessageId} serverMessageId={ServerMessageId} IsBot={IsBot}",
+            _chat.Id, messageId, acceptedId, _chat.IsBot);
 
         await _repo.RegisterOutgoingServerMessageAsync(acceptedId!, messageId, _chat.Id)
             .ConfigureAwait(false);

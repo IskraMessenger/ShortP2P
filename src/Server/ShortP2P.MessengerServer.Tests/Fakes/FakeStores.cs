@@ -226,6 +226,15 @@ internal sealed class FakeCryptoKeysRepository(FakeStores store) : ICryptoKeysRe
         store.CryptoKeys[(keys.SrcNetworkId, keys.TgtNetworkId)] = keys;
         return Task.CompletedTask;
     }
+
+    public Task<CryptoKeys?> FindAsync(
+        string srcNetworkId,
+        string tgtNetworkId,
+        CancellationToken cancellationToken = default)
+    {
+        store.CryptoKeys.TryGetValue((srcNetworkId.Trim(), tgtNetworkId.Trim()), out var keys);
+        return Task.FromResult(keys);
+    }
 }
 
 internal sealed class FakeMessageRepository(FakeStores store) : IMessageRepository
