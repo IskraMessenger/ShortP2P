@@ -274,7 +274,7 @@ public sealed class ChatP2PSession
         if (latest != null)
             ApplyChatRow(latest);
 
-        if (!_chat.IsBot || string.IsNullOrWhiteSpace(_chat.PeerRsaPublicJson))
+        if (MessengerServerSyncService.NeedsBotCatalogLookup(_chat))
         {
             var ensured = await _servers
                 .TryEnsureBotChatFromCatalogAsync(_chat.Id, cancellationToken)
@@ -284,11 +284,12 @@ public sealed class ChatP2PSession
         }
 
         _logger?.LogDebug(
-            "Chat {ChatId}: StartAsync peer={PeerId} IsBot={IsBot} hasPeerKey={HasKey}",
+            "Chat {ChatId}: StartAsync peer={PeerId} IsBot={IsBot} hasPeerKey={HasKey} catalogChecked={Checked}",
             _chat.Id,
             _chat.PeerNetworkIdShort,
             _chat.IsBot,
-            !string.IsNullOrWhiteSpace(_chat.PeerRsaPublicJson));
+            !string.IsNullOrWhiteSpace(_chat.PeerRsaPublicJson),
+            _chat.BotCatalogChecked);
 
         // Also for bots: ChatRequest stores our RSA public key so the bot can encrypt replies.
         try
@@ -587,7 +588,7 @@ public sealed class ChatP2PSession
             ApplyChatRow(latest);
 
         // Existing rows may have been created as human (no IsBot / no catalog key).
-        if (!_chat.IsBot || string.IsNullOrWhiteSpace(_chat.PeerRsaPublicJson))
+        if (MessengerServerSyncService.NeedsBotCatalogLookup(_chat))
         {
             var ensured = await _servers
                 .TryEnsureBotChatFromCatalogAsync(_chat.Id, cancellationToken)
@@ -597,13 +598,14 @@ public sealed class ChatP2PSession
         }
 
         _logger?.LogDebug(
-            "Chat {ChatId}: DeliverOutgoing messageId={MessageId} wireLen={WireLen} IsBot={IsBot} peer={PeerId} hasPeerKey={HasKey}",
+            "Chat {ChatId}: DeliverOutgoing messageId={MessageId} wireLen={WireLen} IsBot={IsBot} peer={PeerId} hasPeerKey={HasKey} catalogChecked={Checked}",
             _chat.Id,
             messageId,
             wire.Length,
             _chat.IsBot,
             _chat.PeerNetworkIdShort,
-            !string.IsNullOrWhiteSpace(_chat.PeerRsaPublicJson));
+            !string.IsNullOrWhiteSpace(_chat.PeerRsaPublicJson),
+            _chat.BotCatalogChecked);
 
         string? acceptedId;
         if (_chat.IsBot)

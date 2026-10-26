@@ -286,8 +286,19 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
     }
 
     /// <summary>
+    /// True when outbound still needs a successful GET /bots classification for this chat row.
+    /// </summary>
+    public static bool NeedsBotCatalogLookup(ChatEntity chat)
+    {
+        if (chat.IsBot)
+            return string.IsNullOrWhiteSpace(chat.PeerRsaPublicJson);
+        return !chat.BotCatalogChecked;
+    }
+
+    /// <summary>
     /// If this chat's peer is listed in GET /bots, mark IsBot and store MessagePublicKey.
-    /// Used before outbound deliver when an existing row was created as a human chat.
+    /// On a successful catalog response with no match, persist <see cref="ChatEntity.BotCatalogChecked"/>
+    /// so human chats do not re-probe on every send. Failed GET /bots does not set the flag.
     /// </summary>
     public async Task<ChatEntity?> TryEnsureBotChatFromCatalogAsync(
         int chatId,
@@ -302,6 +313,18 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
             return null;
 
         if (chat.IsBot && !string.IsNullOrWhiteSpace(chat.PeerRsaPublicJson))
+        {
+            if (!chat.BotCatalogChecked)
+            {
+                await _chats.TryMarkBotCatalogCheckedAsync(chat.Id).ConfigureAwait(false);
+                return await _chats.GetChatAsync(chat.Id).ConfigureAwait(false) ?? chat;
+            }
+
+            return chat;
+        }
+
+        // Already classified as not-a-bot after a successful catalog probe.
+        if (!chat.IsBot && chat.BotCatalogChecked)
             return chat;
 
         IReadOnlyList<BotCatalogDto> bots;
@@ -318,10 +341,12 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
         var bot = FindBotCatalogMatch(bots, chat);
         if (bot == null)
         {
+            await _chats.TryMarkBotCatalogCheckedAsync(chat.Id).ConfigureAwait(false);
+            var human = await _chats.GetChatAsync(chat.Id).ConfigureAwait(false);
             _logger.LogDebug(
-                "TryEnsureBotChatFromCatalog: peer {PeerId} not in bot catalog (bots={Count}) chat={ChatId}",
+                "TryEnsureBotChatFromCatalog: peer {PeerId} not in bot catalog (bots={Count}) chat={ChatId} — marked BotCatalogChecked",
                 chat.PeerNetworkIdShort, bots.Count, chatId);
-            return null;
+            return human ?? chat;
         }
 
         var pub = bot.MessagePublicKey?.Trim() ?? "";

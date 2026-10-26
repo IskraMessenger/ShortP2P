@@ -484,6 +484,22 @@ public sealed class ChatRepository(AppDatabase appDatabase, PeerBlacklist? black
         _db.WriteAsync(conn => conn.ExecuteAsync(
             "UPDATE chats SET DeliveryPath = ? WHERE Id = ?", deliveryPath, chatId));
 
+    /// <summary>
+    /// Records that GET /bots already classified this peer as not a bot (or probe completed with no match).
+    /// </summary>
+    public async Task<bool> TryMarkBotCatalogCheckedAsync(int chatId)
+    {
+        var conn = await _db.GetConnectionAsync().ConfigureAwait(false);
+        var chat = await conn.FindAsync<ChatEntity>(chatId).ConfigureAwait(false);
+        if (chat == null || chat.BotCatalogChecked)
+            return false;
+
+        chat.BotCatalogChecked = true;
+        chat.UpdatedUtcTicks = DateTime.UtcNow.Ticks;
+        await conn.UpdateAsync(chat).ConfigureAwait(false);
+        return true;
+    }
+
     /// <summary>Marks a chat as bot and refreshes its message public key when the catalog key changed.</summary>
     /// <param name="catalogNetworkId">
     /// When set, rewrites <see cref="ChatEntity.PeerNetworkIdShort"/> to the catalog NetworkId
@@ -508,11 +524,13 @@ public sealed class ChatRepository(AppDatabase appDatabase, PeerBlacklist? black
                         !PeerNetworkIdsEqual(chat.PeerNetworkIdShort, canonicalCatalogId);
         var pubChanged = !SafetyNumber.PublicKeyJsonEquals(chat.PeerRsaPublicJson, pub);
         var flagChanged = !chat.IsBot;
-        if (!pubChanged && !flagChanged && !idChanged)
+        var checkedChanged = !chat.BotCatalogChecked;
+        if (!pubChanged && !flagChanged && !idChanged && !checkedChanged)
             return false;
 
         var previous = chat.PeerRsaPublicJson;
         chat.IsBot = true;
+        chat.BotCatalogChecked = true;
         chat.PeerRsaPublicJson = pub;
         if (idChanged)
             chat.PeerNetworkIdShort = canonicalCatalogId;

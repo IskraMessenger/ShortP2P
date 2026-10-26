@@ -507,6 +507,7 @@ public sealed class ChatP2PSession : IAsyncDisposable
         _chat.RelayRouteBlob = row.RelayRouteBlob;
         _chat.DeliveryPath = row.DeliveryPath;
         _chat.IsBot = row.IsBot;
+        _chat.BotCatalogChecked = row.BotCatalogChecked;
         _chat.UpdatedUtcTicks = row.UpdatedUtcTicks;
         AdoptStoredDeliveryPath();
         _logger.LogInformation(
@@ -3205,8 +3206,7 @@ public sealed class ChatP2PSession : IAsyncDisposable
     private async Task<string?> TryServerDeliveryAsync(byte[] wire, CancellationToken cancellationToken)
     {
         var servers = _runtime.MessengerServers;
-        if (servers != null &&
-            (!_chat.IsBot || string.IsNullOrWhiteSpace(_chat.PeerRsaPublicJson)))
+        if (servers != null && MessengerServerSyncService.NeedsBotCatalogLookup(_chat))
         {
             var ensured = await servers
                 .TryEnsureBotChatFromCatalogAsync(_chat.Id, cancellationToken)

@@ -41,5 +41,11 @@ public class ChatEntity
     /// <summary>True when the peer is a messenger-server bot (BotClientInteraction path).</summary>
     public bool IsBot { get; set; }
 
+    /// <summary>
+    /// True after a successful GET /bots classified this chat (bot with key, or confirmed not in catalog).
+    /// Stops repeating catalog probes on every outbound send for ordinary human chats.
+    /// </summary>
+    public bool BotCatalogChecked { get; set; }
+
     public long UpdatedUtcTicks { get; set; }
 }
