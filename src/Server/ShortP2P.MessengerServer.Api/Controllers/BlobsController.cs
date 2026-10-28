@@ -4,6 +4,7 @@ using ShortP2P.MessengerServer.Api.Extensions;
 using ShortP2P.MessengerServer.Api.Validation;
 using ShortP2P.MessengerServer.Api.Validation.Models;
 using ShortP2P.MessengerServer.Contracts;
+using ShortP2P.MessengerServer.Contracts.Dtos;
 using ShortP2P.MessengerServer.UseCases;
 using ShortP2P.MessengerServer.UseCases.Blobs;
 
@@ -15,7 +16,10 @@ namespace ShortP2P.MessengerServer.Api.Controllers;
 public sealed class BlobsController(
     PutBlobUseCase putBlobUseCase,
     GetBlobUseCase getBlobUseCase,
-    DeleteBlobUseCase deleteBlobUseCase) : ControllerBase
+    DeleteBlobUseCase deleteBlobUseCase,
+    PutBlobChunkUseCase putBlobChunkUseCase,
+    GetBlobChunkUseCase getBlobChunkUseCase,
+    GetBlobChunkManifestUseCase getBlobChunkManifestUseCase) : ControllerBase
 {
     [HttpPut("{blobId}")]
     [Consumes("application/octet-stream")]
@@ -94,6 +98,110 @@ public sealed class BlobsController(
                 .ConfigureAwait(false);
 
             return NoContent();
+        }
+        catch (UseCaseException ex)
+        {
+            return this.ToApiErrorResult(ex);
+        }
+    }
+
+    [HttpPut("{blobId}/chunks/{chunkIndex:int}")]
+    [Consumes("application/octet-stream")]
+    [RequestSizeLimit(BlobLimits.ChunkSizeBytes)]
+    public async Task<IActionResult> PutChunkAsync(
+        string blobId,
+        int chunkIndex,
+        [FromQuery] string? targetNetworkId,
+        [FromQuery] int totalChunks,
+        [FromQuery] long totalBytes,
+        [FromHeader(Name = BlobLimits.TargetNetworkIdHeader)] string? targetNetworkIdHeader,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await ValidationGate
+                .EnsureValidAsync(HttpContext.RequestServices, new BlobIdArgument(blobId), cancellationToken)
+                .ConfigureAwait(false);
+
+            var caller = HttpContext.RequireNetworkId();
+            var tgt = !string.IsNullOrWhiteSpace(targetNetworkId)
+                ? targetNetworkId.Trim()
+                : targetNetworkIdHeader?.Trim() ?? "";
+
+            await ValidationGate
+                .EnsureValidAsync(HttpContext.RequestServices, new TargetNetworkIdArgument(tgt), cancellationToken)
+                .ConfigureAwait(false);
+
+            using var buffer = new MemoryStream();
+            await Request.Body.CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
+
+            await putBlobChunkUseCase
+                .ExecuteAsync(
+                    new PutBlobChunkCommand(
+                        blobId.Trim(),
+                        chunkIndex,
+                        caller,
+                        tgt,
+                        totalChunks,
+                        totalBytes,
+                        buffer.ToArray()),
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            return Accepted();
+        }
+        catch (UseCaseException ex)
+        {
+            return this.ToApiErrorResult(ex);
+        }
+    }
+
+    [HttpGet("{blobId}/chunks")]
+    public async Task<IActionResult> GetChunkManifestAsync(string blobId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await ValidationGate
+                .EnsureValidAsync(HttpContext.RequestServices, new BlobIdArgument(blobId), cancellationToken)
+                .ConfigureAwait(false);
+
+            var caller = HttpContext.RequireNetworkId();
+            var manifest = await getBlobChunkManifestUseCase
+                .ExecuteAsync(new GetBlobChunkManifestQuery(blobId.Trim(), caller), cancellationToken)
+                .ConfigureAwait(false);
+
+            return Ok(new BlobChunkManifestDto
+            {
+                BlobId = manifest.BlobId,
+                TotalChunks = manifest.TotalChunks,
+                TotalBytes = manifest.TotalBytes,
+                Indexes = manifest.Indexes.ToArray()
+            });
+        }
+        catch (UseCaseException ex)
+        {
+            return this.ToApiErrorResult(ex);
+        }
+    }
+
+    [HttpGet("{blobId}/chunks/{chunkIndex:int}")]
+    public async Task<IActionResult> GetChunkAsync(
+        string blobId,
+        int chunkIndex,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await ValidationGate
+                .EnsureValidAsync(HttpContext.RequestServices, new BlobIdArgument(blobId), cancellationToken)
+                .ConfigureAwait(false);
+
+            var caller = HttpContext.RequireNetworkId();
+            var chunk = await getBlobChunkUseCase
+                .ExecuteAsync(new GetBlobChunkQuery(blobId.Trim(), chunkIndex, caller), cancellationToken)
+                .ConfigureAwait(false);
+
+            return File(chunk.Ciphertext, "application/octet-stream");
         }
         catch (UseCaseException ex)
         {

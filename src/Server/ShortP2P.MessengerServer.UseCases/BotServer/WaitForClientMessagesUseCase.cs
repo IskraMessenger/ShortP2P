@@ -6,11 +6,13 @@ using ShortP2P.MessengerServer.UseCases.BotBlacklist;
 namespace ShortP2P.MessengerServer.UseCases.BotServer;
 
 /// <summary>
-/// Long-poll of encrypted client → bot messages. Returned messages are removed from the queue.
+/// Long-poll of encrypted client → bot messages.
+/// Text messages leave the queue when returned. Messages that already have ciphertext chunks stay until the bot receipt.
 /// </summary>
 public sealed class WaitForClientMessagesUseCase(
     IBotAccountRepository accounts,
     IClientToBotMessageRepository messages,
+    IBlobChunkRepository chunks,
     IClientToBotWaitService wait,
     IOptions<MessengerInboxOptions> inboxOptions,
     IPasswordHasher passwordHasher,
@@ -37,7 +39,11 @@ public sealed class WaitForClientMessagesUseCase(
         var opts = inboxOptions.Value;
         var timeoutSeconds = query.TimeoutSeconds ?? opts.MaxPollTimeoutSeconds;
 
-        var taken = await messages.TakeForBotAsync(account.NetworkId, cancellationToken).ConfigureAwait(false);
+        var taken = await messages.TakeForBotAsync(
+                account.NetworkId,
+                (messageId, ct) => chunks.HasAnyAsync(messageId, ct),
+                cancellationToken)
+            .ConfigureAwait(false);
         var pending = FilterExpired(taken);
         if (pending.Count > 0)
             return pending;
@@ -46,7 +52,11 @@ public sealed class WaitForClientMessagesUseCase(
             .WaitAsync(account.NetworkId, TimeSpan.FromSeconds(timeoutSeconds), cancellationToken)
             .ConfigureAwait(false);
 
-        taken = await messages.TakeForBotAsync(account.NetworkId, cancellationToken).ConfigureAwait(false);
+        taken = await messages.TakeForBotAsync(
+                account.NetworkId,
+                (messageId, ct) => chunks.HasAnyAsync(messageId, ct),
+                cancellationToken)
+            .ConfigureAwait(false);
         return FilterExpired(taken);
     }
 

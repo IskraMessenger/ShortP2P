@@ -28,6 +28,7 @@ public static class MessengerPersistenceServiceCollectionExtensions
         services.AddScoped<IMessageInboxRepository, PostgresMessageInboxRepository>();
         services.AddScoped<IDeliveryTicketRepository, PostgresDeliveryTicketRepository>();
         services.AddScoped<IBlobRepository, PostgresBlobRepository>();
+        services.AddScoped<IBlobChunkRepository, PostgresBlobChunkRepository>();
         services.AddScoped<IBotToClientMessageRepository, PostgresBotToClientMessageRepository>();
         services.AddScoped<IClientToBotMessageRepository, PostgresClientToBotMessageRepository>();
         services.AddScoped<IBotBlacklistRepository, PostgresBotBlacklistRepository>();

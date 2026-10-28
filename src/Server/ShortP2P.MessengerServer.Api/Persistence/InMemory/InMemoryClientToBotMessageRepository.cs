@@ -14,22 +14,52 @@ public sealed class InMemoryClientToBotMessageRepository(InMemoryMessengerStore 
     public Task<bool> ExistsAsync(string messageId, CancellationToken cancellationToken = default) =>
         Task.FromResult(store.ClientToBotMessages.ContainsKey(messageId));
 
+    public Task<ClientToBotMessage?> FindAsync(string messageId, CancellationToken cancellationToken = default)
+    {
+        store.ClientToBotMessages.TryGetValue(messageId, out var message);
+        return Task.FromResult(message);
+    }
+
     public Task<IReadOnlyList<ClientToBotMessage>> TakeForBotAsync(
         string botNetworkId,
+        CancellationToken cancellationToken = default) =>
+        TakeForBotAsync(botNetworkId, (_, _) => Task.FromResult(false), cancellationToken);
+
+    public async Task<IReadOnlyList<ClientToBotMessage>> TakeForBotAsync(
+        string botNetworkId,
+        Func<string, CancellationToken, Task<bool>> keep,
         CancellationToken cancellationToken = default)
     {
+        List<ClientToBotMessage> pending;
         lock (store.ClientToBotGate)
         {
-            var taken = store.ClientToBotMessages.Values
+            pending = store.ClientToBotMessages.Values
                 .Where(m => string.Equals(m.BotNetworkId, botNetworkId, StringComparison.Ordinal))
                 .OrderBy(m => m.CreatedUtc)
-                .ToArray();
-
-            foreach (var message in taken)
-                store.ClientToBotMessages.TryRemove(message.MessageId, out _);
-
-            return Task.FromResult<IReadOnlyList<ClientToBotMessage>>(taken);
+                .ToList();
         }
+
+        var result = new List<ClientToBotMessage>(pending.Count);
+        foreach (var message in pending)
+        {
+            var leave = await keep(message.MessageId, cancellationToken).ConfigureAwait(false);
+            if (!leave)
+            {
+                lock (store.ClientToBotGate)
+                    store.ClientToBotMessages.TryRemove(message.MessageId, out _);
+            }
+
+            result.Add(message);
+        }
+
+        return result;
+    }
+
+    public Task RemoveAsync(string messageId, CancellationToken cancellationToken = default)
+    {
+        lock (store.ClientToBotGate)
+            store.ClientToBotMessages.TryRemove(messageId, out _);
+        return Task.CompletedTask;
     }
 
     public Task RemoveForBotAsync(string botNetworkId, CancellationToken cancellationToken = default)

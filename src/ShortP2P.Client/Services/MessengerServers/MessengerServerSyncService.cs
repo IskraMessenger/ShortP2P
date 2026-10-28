@@ -782,7 +782,8 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
         ChatEntity chat,
         UserEntity user,
         byte[] wire,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? serverMessageId = null)
     {
         Require.NotNull(chat);
         Require.NotNull(user);
@@ -855,7 +856,9 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
             return null;
         }
 
-        var messageId = Guid.NewGuid().ToString("N");
+        var messageId = string.IsNullOrWhiteSpace(serverMessageId)
+            ? Guid.NewGuid().ToString("N")
+            : serverMessageId.Trim();
         var request = new BotSendMessageRequest
         {
             MessageId = messageId,
@@ -988,6 +991,222 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Encrypts an inner chat-wire and uploads it in 50 KB chunks to a ready trusted server.
+    /// Returns null when every server rejected the upload.
+    /// </summary>
+    public async Task<BotChunkUploadResult?> TryUploadBotChunksAsync(
+        ChatEntity chat,
+        UserEntity user,
+        string blobId,
+        byte[] innerWire,
+        CancellationToken cancellationToken = default)
+    {
+        Require.NotNull(chat);
+        Require.NotNull(user);
+        Require.NotNullOrWhiteSpace(blobId);
+        Require.NotNull(innerWire);
+
+        if (string.IsNullOrWhiteSpace(chat.PeerRsaPublicJson))
+            return null;
+
+        RsaPublicKey peerKey;
+        try
+        {
+            peerKey = RsaKeySerializer.DeserializePublic(chat.PeerRsaPublicJson);
+        }
+        catch
+        {
+            return null;
+        }
+
+        byte[] ciphertext;
+        try
+        {
+            ciphertext = MessengerServerPayloadCodec.Encrypt(innerWire, peerKey);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to encrypt bot blob for chat {ChatId}", chat.Id);
+            return null;
+        }
+
+        var peerId = chat.PeerNetworkIdShort.Trim();
+        if (peerId.Length == 0)
+            return null;
+
+        var chunks = BotBlobChunker.Split(ciphertext);
+        var sha = BotBlobChunker.Sha256Hex(ciphertext);
+        var ready = await _manager.EnsureAllActiveReadyAsync(cancellationToken).ConfigureAwait(false);
+        var targets = _manager.OrderConnectionsForDelivery(ready)
+            .Where(c => _manager.AllowsTraffic(c))
+            .ToArray();
+
+        foreach (var conn in targets)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var uploaded = true;
+            for (var i = 0; i < chunks.Length; i++)
+            {
+                var index = i;
+                try
+                {
+                    await BotChunkRetry.RunAsync(
+                            ct => TrackAsync(
+                                conn,
+                                () => conn.Api.PutBlobChunkAsync(
+                                    blobId,
+                                    index,
+                                    peerId,
+                                    chunks.Length,
+                                    ciphertext.Length,
+                                    chunks[index],
+                                    ct)),
+                            ex => ex is not MessengerServerApiException api || (int)api.StatusCode != 409,
+                            cancellationToken: cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Bot chunk {Index} upload failed on {BaseUrl}", index, conn.Entity.BaseUrl);
+                    uploaded = false;
+                    break;
+                }
+            }
+
+            if (uploaded)
+                return new BotChunkUploadResult(conn.Entity.BaseUrl, chunks.Length, sha);
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Downloads ciphertext chunks and checks the SHA-256 from the transfer offer.
+    /// </summary>
+    public async Task<byte[]?> TryDownloadBotChunksAsync(
+        string blobId,
+        string? preferredBaseUrl,
+        int totalChunks,
+        string? ciphertextSha256,
+        CancellationToken cancellationToken = default)
+    {
+        Require.NotNullOrWhiteSpace(blobId);
+        if (totalChunks < 1)
+            return null;
+
+        var ready = await _manager.EnsureAllActiveReadyAsync(cancellationToken).ConfigureAwait(false);
+        var ordered = OrderConnectionsForBlobDownload(ready, preferredBaseUrl);
+        foreach (var conn in ordered)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!_manager.AllowsTraffic(conn))
+                continue;
+
+            try
+            {
+                var manifest = await TrackAsync(
+                        conn,
+                        () => conn.Api.GetBlobChunkManifestAsync(blobId, cancellationToken))
+                    .ConfigureAwait(false);
+                if (manifest.TotalChunks != totalChunks || manifest.Indexes == null)
+                    continue;
+
+                var parts = new byte[totalChunks][];
+                var complete = true;
+                for (var i = 0; i < totalChunks; i++)
+                {
+                    var index = i;
+                    try
+                    {
+                        parts[i] = await BotChunkRetry.RunAsync(
+                                ct => TrackAsync(conn, () => conn.Api.GetBlobChunkAsync(blobId, index, ct)),
+                                ex => ex is not MessengerServerApiException api || (int)api.StatusCode != 404,
+                                cancellationToken: cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogDebug(ex, "Bot chunk {Index} download failed on {BaseUrl}", index, conn.Entity.BaseUrl);
+                        complete = false;
+                        break;
+                    }
+                }
+
+                if (!complete)
+                    continue;
+
+                var joined = BotBlobChunker.Join(parts);
+                if (joined.Length != manifest.TotalBytes)
+                    continue;
+                if (!string.IsNullOrWhiteSpace(ciphertextSha256) &&
+                    !string.Equals(BotBlobChunker.Sha256Hex(joined), ciphertextSha256.Trim(), StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                return joined;
+            }
+            catch (MessengerServerApiException ex) when ((int)ex.StatusCode == 404)
+            {
+                _logger.LogDebug("Bot blob {BlobId} not found on {BaseUrl}", blobId, conn.Entity.BaseUrl);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogDebug(ex, "Bot blob download failed on {BaseUrl}", conn.Entity.BaseUrl);
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>Client receipt for a bot → client message. Deletes the server copy and its chunks.</summary>
+    public async Task TrySubmitBotMessageReceiptAsync(
+        string messageId,
+        string? preferredBaseUrl,
+        CancellationToken cancellationToken = default)
+    {
+        Require.NotNullOrWhiteSpace(messageId);
+        var ready = await _manager.EnsureAllActiveReadyAsync(cancellationToken).ConfigureAwait(false);
+        var ordered = OrderConnectionsForBlobDownload(ready, preferredBaseUrl);
+        foreach (var conn in ordered)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!_manager.AllowsTraffic(conn))
+                continue;
+            try
+            {
+                await TrackAsync(
+                        conn,
+                        () => conn.Api.SubmitBotMessageReceiptAsync(
+                            new BotMessageReceiptRequest
+                            {
+                                MessageId = messageId.Trim(),
+                                ReceivedAtUtc = DateTime.UtcNow
+                            },
+                            cancellationToken))
+                    .ConfigureAwait(false);
+                return;
+            }
+            catch (MessengerServerApiException ex) when ((int)ex.StatusCode == 404)
+            {
+                return;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogDebug(ex, "Bot message receipt failed on {BaseUrl}", conn.Entity.BaseUrl);
+            }
+        }
     }
 
     /// <summary>
@@ -1488,6 +1707,9 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
                 continue;
             }
 
+            var deferReceipt = ChatWireCodec.TryParse(wire, out var parsedWire) &&
+                               parsedWire is ChatWireTransferOffer { TotalChunks: > 0 };
+
             await _ingestGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
@@ -1526,6 +1748,10 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
             }
 
             // Ack on every server that delivered a copy, even if we already ingested it once.
+            // Chunked attachments stay on the server until the file itself has been assembled.
+            if (deferReceipt)
+                continue;
+
             try
             {
                 await TrackAsync(connection, () => connection.Api.SubmitBotMessageReceiptAsync(
@@ -2208,7 +2434,8 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
                             offer.SizeBytes,
                             host,
                             offer.Port,
-                            offer.ExpiresUtcTicks)
+                            offer.ExpiresUtcTicks,
+                            offer.TotalChunks)
                         .ConfigureAwait(false);
                     return;
                 case ChatWireUserInfo userInfo:

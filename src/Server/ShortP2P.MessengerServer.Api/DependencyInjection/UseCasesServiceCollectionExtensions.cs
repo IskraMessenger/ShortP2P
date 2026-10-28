@@ -45,6 +45,9 @@ public static class UseCasesServiceCollectionExtensions
         services.AddScoped<PutBlobUseCase>();
         services.AddScoped<GetBlobUseCase>();
         services.AddScoped<DeleteBlobUseCase>();
+        services.AddScoped<PutBlobChunkUseCase>();
+        services.AddScoped<GetBlobChunkUseCase>();
+        services.AddScoped<GetBlobChunkManifestUseCase>();
         services.AddScoped<ForwardPeerProfileUseCase>();
         services.AddScoped<PollInboxEventsUseCase>();
         services.AddScoped<BotBlacklistService>();
@@ -56,6 +59,7 @@ public static class UseCasesServiceCollectionExtensions
         services.AddScoped<RemoveBotUseCase>();
         services.AddScoped<DeliverBotMessagesUseCase>();
         services.AddScoped<WaitForClientMessagesUseCase>();
+        services.AddScoped<AcknowledgeClientMessageUseCase>();
         services.AddScoped<WaitForBotMessagesUseCase>();
         services.AddScoped<SendMessageToBotUseCase>();
         services.AddScoped<AcknowledgeBotMessageUseCase>();

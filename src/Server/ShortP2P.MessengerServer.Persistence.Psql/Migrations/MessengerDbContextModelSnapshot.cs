@@ -57,6 +57,45 @@ namespace ShortP2P.MessengerServer.Persistence.Psql.Migrations
                     b.ToTable("blobs", (string)null);
                 });
 
+            modelBuilder.Entity("ShortP2P.MessengerServer.Persistence.Psql.Entities.BlobChunkRecord", b =>
+                {
+                    b.Property<string>("BlobId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<int>("ChunkIndex")
+                        .HasColumnType("integer");
+
+                    b.Property<byte[]>("Ciphertext")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("SrcNetworkId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("TgtNetworkId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<int>("TotalChunks")
+                        .HasColumnType("integer");
+
+                    b.Property<long>("TotalBytes")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("BlobId", "ChunkIndex");
+
+                    b.HasIndex("CreatedUtc");
+
+                    b.ToTable("blob_chunks", (string)null);
+                });
+
             modelBuilder.Entity("ShortP2P.MessengerServer.Persistence.Psql.Entities.ChatRecord", b =>
                 {
                     b.Property<string>("ChatId")

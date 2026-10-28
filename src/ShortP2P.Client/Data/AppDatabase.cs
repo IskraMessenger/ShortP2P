@@ -217,6 +217,8 @@ public sealed class AppDatabase
             .ConfigureAwait(false);
         await TryAlterAsync(connection, "ALTER TABLE messages ADD COLUMN TransferState INTEGER NOT NULL DEFAULT 0")
             .ConfigureAwait(false);
+        await TryAlterAsync(connection, "ALTER TABLE messages ADD COLUMN TransferChunkCount INTEGER NOT NULL DEFAULT 0")
+            .ConfigureAwait(false);
 
         await MigrateBleDiscoveredPeersToFullNetworkIdAsync(connection).ConfigureAwait(false);
     }

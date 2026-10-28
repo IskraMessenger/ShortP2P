@@ -17,6 +17,7 @@ public sealed class BotServerInteractionController(
     RemoveBotUseCase removeBot,
     DeliverBotMessagesUseCase deliverBotMessages,
     WaitForClientMessagesUseCase waitForClientMessages,
+    AcknowledgeClientMessageUseCase acknowledgeClientMessage,
     ICryptoKeysRepository cryptoKeys) : ControllerBase
 {
     /// <summary>Register a bot. The bot key is returned once.</summary>
@@ -170,6 +171,29 @@ public sealed class BotServerInteractionController(
                 RequestId = request.RequestId.Trim(),
                 Messages = dtoList
             });
+        }
+        catch (UseCaseException ex)
+        {
+            return this.ToApiErrorResult(ex);
+        }
+    }
+
+    /// <summary>Bot receipt. Removes the client → bot message and its ciphertext chunks.</summary>
+    [HttpPost("receipts")]
+    [AllowAnonymous]
+    public async Task<IActionResult> SubmitReceipt(
+        [FromBody] BotServerReceiptRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await acknowledgeClientMessage
+                .ExecuteAsync(
+                    new AcknowledgeClientMessageCommand(request.BotNetworkId, request.BotKey, request.MessageId),
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            return Accepted();
         }
         catch (UseCaseException ex)
         {

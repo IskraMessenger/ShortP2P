@@ -1031,7 +1031,8 @@ public sealed class ChatRepository(AppDatabase appDatabase, PeerBlacklist? black
         long transferSizeBytes,
         string transferHost,
         int transferPort,
-        long transferExpiresUtcTicks)
+        long transferExpiresUtcTicks,
+        int transferChunkCount = 0)
     {
         var text = string.IsNullOrWhiteSpace(displayText)
             ? (string.IsNullOrWhiteSpace(transferFileName) ? "[Входящее вложение]" : transferFileName.Trim())
@@ -1056,7 +1057,8 @@ public sealed class ChatRepository(AppDatabase appDatabase, PeerBlacklist? black
                 TransferHost = transferHost?.Trim() ?? "",
                 TransferPort = transferPort,
                 TransferExpiresUtcTicks = transferExpiresUtcTicks,
-                TransferState = (int)ChatTransferState.AwaitingClick
+                TransferState = (int)ChatTransferState.AwaitingClick,
+                TransferChunkCount = Math.Max(0, transferChunkCount)
             };
             await conn.InsertAsync(msg).ConfigureAwait(false);
 
@@ -1237,6 +1239,18 @@ public sealed class ChatRepository(AppDatabase appDatabase, PeerBlacklist? black
                 0,
                 expiresUtcTicks,
                 (int)ChatTransferState.Offered,
+                messageId)
+            .ConfigureAwait(false);
+    }
+
+    public async Task UpdateBotChunkLocatorAsync(int messageId, string host, int chunkCount, string sha256)
+    {
+        var conn = await _db.GetConnectionAsync().ConfigureAwait(false);
+        await conn.ExecuteAsync(
+                "UPDATE messages SET TransferHost = ?, TransferChunkCount = ?, TransferToken = ? WHERE Id = ?",
+                host?.Trim() ?? "",
+                Math.Max(0, chunkCount),
+                sha256?.Trim() ?? "",
                 messageId)
             .ConfigureAwait(false);
     }

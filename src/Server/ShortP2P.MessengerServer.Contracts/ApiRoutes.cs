@@ -79,4 +79,7 @@ public static class ApiRoutes
     /// <summary>POST long-poll client → bot messages (auth via <c>botKey</c> in body).</summary>
     public const string BotServerWaitForIncomeMessages =
         Prefix + "/bot_server_interaction/wait_for_income_messages";
+
+    /// <summary>POST bot receipt for a client → bot message (auth via <c>botKey</c>); drops the message and its chunks.</summary>
+    public const string BotServerReceipts = Prefix + "/bot_server_interaction/receipts";
 }

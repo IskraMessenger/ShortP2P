@@ -312,7 +312,9 @@ public sealed record ChatWireTransferOffer(
     string Host,
     int Port,
     long ExpiresUtcTicks,
-    string? BlobId = null) : ChatWireMessage
+    string? BlobId = null,
+    int TotalChunks = 0,
+    string? CiphertextSha256 = null) : ChatWireMessage
 {
     public string ResolveBlobId() =>
         BlobId is null || string.IsNullOrWhiteSpace(BlobId) ? TransferId : BlobId.Trim();
