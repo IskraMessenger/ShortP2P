@@ -865,18 +865,26 @@ public sealed class ChatP2PSession : IAsyncDisposable
                     shouldNotify = true;
                     break;
                 case ChatWireFile f:
-                    try
+                    if (_chat.IsBot)
                     {
-                        _media.ValidateDocumentMime(f.MimeType);
-                        _media.ValidateFileSize(f.MimeType, f.FileBytes.Length, CurrentTrafficQuality);
                         _ = await _repo.AddFileMessageAsync(_chat.Id, false, f.FileName, f.MimeType, f.FileBytes)
                             .ConfigureAwait(false);
                     }
-                    catch
+                    else
                     {
-                        _ = await _repo.AddMessageAsync(_chat.Id, false,
-                                "[Входящий файл отклонён: неподдерживаемый тип или размер.]")
-                            .ConfigureAwait(false);
+                        try
+                        {
+                            _media.ValidateDocumentMime(f.MimeType);
+                            _media.ValidateFileSize(f.MimeType, f.FileBytes.Length, CurrentTrafficQuality);
+                            _ = await _repo.AddFileMessageAsync(_chat.Id, false, f.FileName, f.MimeType, f.FileBytes)
+                                .ConfigureAwait(false);
+                        }
+                        catch
+                        {
+                            _ = await _repo.AddMessageAsync(_chat.Id, false,
+                                    "[Входящий файл отклонён: неподдерживаемый тип или размер.]")
+                                .ConfigureAwait(false);
+                        }
                     }
 
                     shouldNotify = true;
@@ -1723,10 +1731,17 @@ public sealed class ChatP2PSession : IAsyncDisposable
     {
         if (imageBytes.Length == 0)
             throw new ArgumentException("Image is empty.", nameof(imageBytes));
-        _media.ValidateMime(mimeType);
-        _media.ValidateSize(imageBytes.Length, CurrentTrafficQuality);
 
         var bytes = imageBytes.ToArray();
+        if (_chat.IsBot)
+        {
+            BotAttachmentPolicy.ValidateSend(mimeType, bytes.Length, CurrentTrafficQuality, _media);
+            await QueueBotBinaryAsync("image", "image", mimeType, bytes, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        _media.ValidateMime(mimeType);
+        _media.ValidateSize(imageBytes.Length, CurrentTrafficQuality);
         await CreateAndSendTransferOfferAsync("image", "image", mimeType, bytes, cancellationToken)
             .ConfigureAwait(false);
     }
@@ -1736,20 +1751,38 @@ public sealed class ChatP2PSession : IAsyncDisposable
     {
         if (fileBytes.Length == 0)
             throw new ArgumentException("File is empty.", nameof(fileBytes));
-        _media.ValidateDocumentMime(mimeType);
-        _media.ValidateFileSize(mimeType, fileBytes.Length, CurrentTrafficQuality);
 
         var bytes = fileBytes.ToArray();
         var safeName = Path.GetFileName(fileName.Trim());
         if (string.IsNullOrEmpty(safeName))
             safeName = "file";
 
-        var payloadKind = mimeType.StartsWith("audio/", StringComparison.OrdinalIgnoreCase)
+        if (_chat.IsBot)
+        {
+            BotAttachmentPolicy.ValidateSend(mimeType, bytes.Length, CurrentTrafficQuality, _media);
+            var botKind = BotAttachmentPolicy.TryClassify(mimeType, out var classified)
+                ? classified
+                : BotAttachmentKind.Document;
+            var payloadKind = botKind switch
+            {
+                BotAttachmentKind.Image => "image",
+                BotAttachmentKind.Audio => "audio",
+                BotAttachmentKind.Video => "video",
+                _ => "document"
+            };
+            await QueueBotBinaryAsync(payloadKind, safeName, mimeType, bytes, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        _media.ValidateDocumentMime(mimeType);
+        _media.ValidateFileSize(mimeType, fileBytes.Length, CurrentTrafficQuality);
+
+        var payloadKindHuman = mimeType.StartsWith("audio/", StringComparison.OrdinalIgnoreCase)
             ? "voice"
             : mimeType.StartsWith("video/", StringComparison.OrdinalIgnoreCase)
                 ? "video"
                 : "document";
-        await CreateAndSendTransferOfferAsync(payloadKind, safeName, mimeType, bytes, cancellationToken)
+        await CreateAndSendTransferOfferAsync(payloadKindHuman, safeName, mimeType, bytes, cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -1761,7 +1794,11 @@ public sealed class ChatP2PSession : IAsyncDisposable
 
         var state = (ChatTransferState)row.TransferState;
         if (state == ChatTransferState.Received && row.ImageBlob is { Length: > 0 })
+        {
+            if (_chat.IsBot && row.TransferChunkCount > 0)
+                await ReceiptBotBlobAsync(row, cancellationToken).ConfigureAwait(false);
             return;
+        }
         if (state == ChatTransferState.Transferring)
             return;
 
@@ -1777,6 +1814,9 @@ public sealed class ChatP2PSession : IAsyncDisposable
 
             if (await TryReceiveBlobFromMessengerServersAsync(row, cancellationToken).ConfigureAwait(false))
                 return;
+
+            if (_chat.IsBot)
+                throw new InvalidOperationException("Не удалось скачать вложение бота.");
 
             var localHost = TryResolveLocalHost() ?? "127.0.0.1";
             var lease = await _tcpTransfer.CreateListenerAsync(row.TransferId, row.TransferToken, TimeSpan.FromSeconds(45),
@@ -1829,7 +1869,22 @@ public sealed class ChatP2PSession : IAsyncDisposable
             return false;
 
         var hint = LooksLikeHttpBaseUrl(row.TransferHost) ? row.TransferHost : null;
-        var ciphertext = await servers.TryDownloadBlobAsync(blobId, hint, cancellationToken).ConfigureAwait(false);
+        byte[]? ciphertext;
+        if (_chat.IsBot && row.TransferChunkCount > 0)
+        {
+            ciphertext = await servers.TryDownloadBotChunksAsync(
+                    blobId,
+                    hint,
+                    row.TransferChunkCount,
+                    row.TransferToken,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        else
+        {
+            ciphertext = await servers.TryDownloadBlobAsync(blobId, hint, cancellationToken).ConfigureAwait(false);
+        }
+
         if (ciphertext == null || ciphertext.Length == 0)
             return false;
 
@@ -1853,16 +1908,24 @@ public sealed class ChatP2PSession : IAsyncDisposable
         switch (parsed)
         {
             case ChatWireImage img:
-                _media.ValidateMime(img.MimeType);
-                _media.ValidateSize(img.ImageBytes.Length, CurrentTrafficQuality);
+                if (!_chat.IsBot)
+                {
+                    _media.ValidateMime(img.MimeType);
+                    _media.ValidateSize(img.ImageBytes.Length, CurrentTrafficQuality);
+                }
+
                 bytes = img.ImageBytes;
                 mimeType = img.MimeType;
                 fileName = string.IsNullOrWhiteSpace(row.TransferFileName) ? row.Text : row.TransferFileName;
                 kind = ChatPayloadKind.Image;
                 break;
             case ChatWireFile f:
-                _media.ValidateDocumentMime(f.MimeType);
-                _media.ValidateFileSize(f.MimeType, f.FileBytes.Length, CurrentTrafficQuality);
+                if (!_chat.IsBot)
+                {
+                    _media.ValidateDocumentMime(f.MimeType);
+                    _media.ValidateFileSize(f.MimeType, f.FileBytes.Length, CurrentTrafficQuality);
+                }
+
                 bytes = f.FileBytes;
                 mimeType = f.MimeType;
                 fileName = string.IsNullOrWhiteSpace(f.FileName)
@@ -1884,7 +1947,10 @@ public sealed class ChatP2PSession : IAsyncDisposable
 
         try
         {
-            await servers.TryDeleteBlobAsync(blobId, cancellationToken).ConfigureAwait(false);
+            if (_chat.IsBot && row.TransferChunkCount > 0)
+                await ReceiptBotBlobAsync(row, cancellationToken).ConfigureAwait(false);
+            else
+                await servers.TryDeleteBlobAsync(blobId, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -1902,6 +1968,117 @@ public sealed class ChatP2PSession : IAsyncDisposable
         !string.IsNullOrWhiteSpace(host) &&
         (host.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ||
          host.StartsWith("http://", StringComparison.OrdinalIgnoreCase));
+
+    private async Task QueueBotBinaryAsync(
+        string payloadKind,
+        string fileName,
+        string mimeType,
+        byte[] bytes,
+        CancellationToken cancellationToken)
+    {
+        var messageId = await _repo
+            .AddFileMessageAsync(_chat.Id, true, fileName, mimeType, bytes, MessageDeliveryStatus.Pending)
+            .ConfigureAwait(false);
+        var serverMessageId = Guid.NewGuid().ToString("N");
+        var expires = DateTimeOffset.UtcNow.AddMinutes(2);
+        await _repo.PromoteFileToTransferOfferAsync(
+                messageId, serverMessageId, "", payloadKind, fileName, mimeType, bytes.Length, expires.UtcTicks)
+            .ConfigureAwait(false);
+        RaiseMessagesChanged();
+
+        var innerWire = payloadKind.Equals("image", StringComparison.OrdinalIgnoreCase)
+            ? ChatWireCodec.EncodeImage(mimeType, bytes)
+            : ChatWireCodec.EncodeFile(fileName, mimeType, bytes);
+
+        _ = _runtime.BinarySends.RunAsync(
+            CurrentTrafficQuality,
+            ct => CompleteBotBinaryAsync(
+                messageId, serverMessageId, innerWire, payloadKind, fileName, mimeType, bytes.Length, expires.UtcTicks, ct),
+            cancellationToken);
+    }
+
+    private async Task CompleteBotBinaryAsync(
+        int messageId,
+        string serverMessageId,
+        byte[] innerWire,
+        string payloadKind,
+        string fileName,
+        string mimeType,
+        int plaintextLength,
+        long expiresUtcTicks,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var servers = _runtime.MessengerServers ??
+                          throw new InvalidOperationException("Messenger-серверы не подключены.");
+            var uploaded = await servers
+                .TryUploadBotChunksAsync(_chat, _user, serverMessageId, innerWire, cancellationToken)
+                .ConfigureAwait(false);
+            if (uploaded == null)
+                throw new InvalidOperationException("Не удалось выложить вложение на messenger-сервер.");
+
+            await _repo.UpdateBotChunkLocatorAsync(
+                    messageId, uploaded.BaseUrl, uploaded.TotalChunks, uploaded.CiphertextSha256)
+                .ConfigureAwait(false);
+
+            var offer = new ChatWireTransferOffer(
+                serverMessageId,
+                uploaded.CiphertextSha256,
+                payloadKind,
+                fileName,
+                mimeType,
+                plaintextLength,
+                uploaded.BaseUrl,
+                0,
+                expiresUtcTicks,
+                serverMessageId,
+                uploaded.TotalChunks,
+                uploaded.CiphertextSha256);
+            var accepted = await servers.TryDeliverBotWireAsync(
+                    _chat,
+                    _user,
+                    ChatWireCodec.EncodeTransferOffer(offer),
+                    cancellationToken,
+                    serverMessageId)
+                .ConfigureAwait(false);
+            if (string.IsNullOrEmpty(accepted))
+                throw new InvalidOperationException("Не удалось доставить сообщение боту через messenger-сервер.");
+
+            await _repo.RegisterOutgoingServerMessageAsync(accepted, messageId, _chat.Id).ConfigureAwait(false);
+            await _repo.UpdateMessageDeliveryStatusAsync(messageId, MessageDeliveryStatus.Sent).ConfigureAwait(false);
+            RaiseMessagesChanged();
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Chat {ChatId}: bot binary send failed for message {MessageId}", _chat.Id, messageId);
+            try
+            {
+                await _repo.UpdateMessageDeliveryStatusAsync(messageId, MessageDeliveryStatus.Failed)
+                    .ConfigureAwait(false);
+                await _repo.UpdateTransferStateAsync(messageId, ChatTransferState.Failed).ConfigureAwait(false);
+                RaiseMessagesChanged();
+            }
+            catch (Exception updateEx)
+            {
+                _logger.LogDebug(updateEx, "Chat {ChatId}: failed to mark bot binary {MessageId} as failed", _chat.Id,
+                    messageId);
+            }
+        }
+    }
+
+    private async Task ReceiptBotBlobAsync(ChatMessageEntity row, CancellationToken cancellationToken)
+    {
+        var servers = _runtime.MessengerServers;
+        if (servers == null || string.IsNullOrWhiteSpace(row.TransferId))
+            return;
+        var hint = LooksLikeHttpBaseUrl(row.TransferHost) ? row.TransferHost : null;
+        await servers.TrySubmitBotMessageReceiptAsync(row.TransferId.Trim(), hint, cancellationToken)
+            .ConfigureAwait(false);
+    }
 
     private async Task CreateAndSendTransferOfferAsync(string payloadKind, string fileName, string mimeType,
         byte[] bytes,
@@ -2003,7 +2180,8 @@ public sealed class ChatP2PSession : IAsyncDisposable
                 offer.SizeBytes,
                 host,
                 offer.Port,
-                offer.ExpiresUtcTicks)
+                offer.ExpiresUtcTicks,
+                offer.TotalChunks)
             .ConfigureAwait(false);
     }
 

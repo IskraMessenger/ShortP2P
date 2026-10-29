@@ -1,9 +1,12 @@
 using ShortP2P.MessengerServer.UseCases.Abstractions;
+using ShortP2P.MessengerServer.UseCases.Blobs;
 
 namespace ShortP2P.MessengerServer.UseCases.BotClient;
 
-/// <summary>Client delivery receipt: drops the stored bot → client message.</summary>
-public sealed class AcknowledgeBotMessageUseCase(IBotToClientMessageRepository messages)
+/// <summary>Client delivery receipt: drops the stored bot → client message and its ciphertext chunks.</summary>
+public sealed class AcknowledgeBotMessageUseCase(
+    IBotToClientMessageRepository messages,
+    IBlobChunkRepository chunks)
 {
     public async Task ExecuteAsync(
         AcknowledgeBotMessageCommand command,
@@ -12,12 +15,16 @@ public sealed class AcknowledgeBotMessageUseCase(IBotToClientMessageRepository m
         var caller = command.CallerNetworkId.Trim();
         var messageId = command.MessageId.Trim();
         var message = await messages.FindByIdAsync(messageId, cancellationToken).ConfigureAwait(false);
-        if (message is null)
-            throw UseCaseException.NotFound("Message not found.");
-
-        if (!string.Equals(message.ClientNetworkId, caller, StringComparison.Ordinal))
+        if (message != null &&
+            !string.Equals(message.ClientNetworkId, caller, StringComparison.Ordinal))
+        {
             throw UseCaseException.Unauthorized("Only the message recipient can submit a delivery receipt.");
+        }
 
-        await messages.RemoveAsync(messageId, cancellationToken).ConfigureAwait(false);
+        if (message != null)
+            await messages.RemoveAsync(messageId, cancellationToken).ConfigureAwait(false);
+
+        await BlobChunkCleanup.DeleteForCallerAsync(chunks, messageId, caller, cancellationToken)
+            .ConfigureAwait(false);
     }
 }

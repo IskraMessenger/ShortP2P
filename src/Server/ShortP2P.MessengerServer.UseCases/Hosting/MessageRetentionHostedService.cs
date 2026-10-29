@@ -60,6 +60,10 @@ public sealed class MessageRetentionHostedService(
         if (blobs is not null)
             await blobs.RemoveOlderThanAsync(cutoff, cancellationToken).ConfigureAwait(false);
 
+        var blobChunks = scope.ServiceProvider.GetService<IBlobChunkRepository>();
+        if (blobChunks is not null)
+            await blobChunks.RemoveOlderThanAsync(cutoff, cancellationToken).ConfigureAwait(false);
+
         var botToClient = scope.ServiceProvider.GetService<IBotToClientMessageRepository>();
         if (botToClient is not null)
             await botToClient.RemoveOlderThanAsync(cutoff, cancellationToken).ConfigureAwait(false);

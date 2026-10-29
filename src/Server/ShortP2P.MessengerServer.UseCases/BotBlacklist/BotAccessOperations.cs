@@ -8,4 +8,5 @@ public static class BotAccessOperations
     public const string Remove = "remove";
     public const string SendMessages = "send_messages";
     public const string WaitForIncomeMessages = "wait_for_income_messages";
+    public const string Receipts = "receipts";
 }

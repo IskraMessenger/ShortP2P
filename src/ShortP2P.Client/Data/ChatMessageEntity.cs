@@ -50,4 +50,7 @@ public class ChatMessageEntity
 
     /// <summary>Значение <see cref="ChatTransferState" />.</summary>
     public int TransferState { get; set; }
+
+    /// <summary>Bot ciphertext chunk count. Zero for human transfers and text.</summary>
+    public int TransferChunkCount { get; set; }
 }

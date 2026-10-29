@@ -177,7 +177,7 @@ public class BotClientInteractionUseCaseTests
                 Clock,
                 Blacklist);
 
-        public AcknowledgeBotMessageUseCase Ack() => new(ToClient);
+        public AcknowledgeBotMessageUseCase Ack() => new(ToClient, new EmptyBlobChunks());
 
         public SendMessageToBotUseCase Send() => new(Bots, ToBot, BotWait, Blacklist);
     }
@@ -288,14 +288,35 @@ public class BotClientInteractionUseCaseTests
         public Task<bool> ExistsAsync(string messageId, CancellationToken cancellationToken = default) =>
             Task.FromResult(_items.ContainsKey(messageId));
 
+        public Task<ClientToBotMessage?> FindAsync(string messageId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(_items.TryGetValue(messageId, out var message) ? message : null);
+
         public Task<IReadOnlyList<ClientToBotMessage>> TakeForBotAsync(
             string botNetworkId,
+            CancellationToken cancellationToken = default) =>
+            TakeForBotAsync(botNetworkId, (_, _) => Task.FromResult(false), cancellationToken);
+
+        public async Task<IReadOnlyList<ClientToBotMessage>> TakeForBotAsync(
+            string botNetworkId,
+            Func<string, CancellationToken, Task<bool>> keep,
             CancellationToken cancellationToken = default)
         {
             var taken = _items.Values.Where(m => m.BotNetworkId == botNetworkId).OrderBy(m => m.CreatedUtc).ToArray();
+            var result = new List<ClientToBotMessage>(taken.Length);
             foreach (var message in taken)
-                _items.Remove(message.MessageId);
-            return Task.FromResult<IReadOnlyList<ClientToBotMessage>>(taken);
+            {
+                if (!await keep(message.MessageId, cancellationToken).ConfigureAwait(false))
+                    _items.Remove(message.MessageId);
+                result.Add(message);
+            }
+
+            return result;
+        }
+
+        public Task RemoveAsync(string messageId, CancellationToken cancellationToken = default)
+        {
+            _items.Remove(messageId);
+            return Task.CompletedTask;
         }
 
         public Task RemoveForBotAsync(string botNetworkId, CancellationToken cancellationToken = default)
@@ -311,5 +332,29 @@ public class BotClientInteractionUseCaseTests
                 _items.Remove(id);
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class EmptyBlobChunks : IBlobChunkRepository
+    {
+        public Task<BlobChunk?> FindAsync(string blobId, int chunkIndex, CancellationToken cancellationToken = default) =>
+            Task.FromResult<BlobChunk?>(null);
+
+        public Task<IReadOnlyList<BlobChunk>> ListByBlobIdAsync(string blobId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<BlobChunk>>([]);
+
+        public Task<bool> HasAnyAsync(string blobId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(false);
+
+        public Task<long> SumIncompleteUploadBytesAsync(string excludeBlobId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(0L);
+
+        public Task AddAsync(BlobChunk chunk, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+
+        public Task RemoveByBlobIdAsync(string blobId, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+
+        public Task RemoveOlderThanAsync(DateTime cutoffUtc, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
     }
 }

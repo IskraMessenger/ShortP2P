@@ -232,6 +232,113 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /api/v1/blobs/{blobId}/chunks/{chunkIndex}:
+    put:
+      operationId: putBlobChunk
+      summary: Store one 50 KB ciphertext chunk of a bot attachment
+      tags: [Blobs]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: blobId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: chunkIndex
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: targetNetworkId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: totalChunks
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: totalBytes
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        '202':
+          description: Accepted. The same bytes for this index may be sent again.
+        '409':
+          description: This index already stores different bytes
+        '507':
+          description: Sender is a bot and the server has no room for this upload
+    get:
+      operationId: getBlobChunk
+      summary: Download one ciphertext chunk
+      tags: [Blobs]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: blobId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: chunkIndex
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Chunk bytes
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+
+  /api/v1/blobs/{blobId}/chunks:
+    get:
+      operationId: getBlobChunkManifest
+      summary: List stored chunk indexes
+      tags: [Blobs]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: blobId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Manifest
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  blobId:
+                    type: string
+                  totalChunks:
+                    type: integer
+                  totalBytes:
+                    type: integer
+                    format: int64
+                  indexes:
+                    type: array
+                    items:
+                      type: integer
+
   /api/v1/messages/receipts:
     post:
       operationId: submitDeliveryReceipt
@@ -571,7 +678,7 @@ paths:
   /api/v1/bot_client_interaction/receipts:
     post:
       operationId: submitBotMessageReceipt
-      summary: Confirm receipt of a bot → client message (server drops its copy)
+      summary: Confirm receipt of a bot → client message (server drops the message and its ciphertext chunks)
       tags: [BotClient]
       security:
         - bearerAuth: []
@@ -583,17 +690,31 @@ paths:
               $ref: '#/components/schemas/BotMessageReceiptRequest'
       responses:
         '202':
-          description: Accepted; message removed from server store
+          description: Accepted; message and chunks removed. A repeat receipt also succeeds.
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '404':
-          description: Message not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiError'
+
+  /api/v1/bot_server_interaction/receipts:
+    post:
+      operationId: submitBotServerReceipt
+      summary: Bot confirms a client → bot message (server drops the message and its ciphertext chunks)
+      description: Authenticated by BotKey in the body. A repeat receipt for an already removed id succeeds.
+      tags: [BotServer]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BotServerReceiptRequest'
+      responses:
+        '202':
+          description: Accepted; message and chunks removed
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 
 components:
   securitySchemes:
@@ -962,6 +1083,23 @@ components:
         receivedAtUtc:
           type: string
           format: date-time
+
+    BotServerReceiptRequest:
+      type: object
+      required: [requestId, botNetworkId, botKey, messageId]
+      properties:
+        requestId:
+          type: string
+        botNetworkId:
+          type: string
+          description: Bot short network id
+        botKey:
+          type: string
+          minLength: 64
+          maxLength: 64
+          description: Secret bot key, base64
+        messageId:
+          type: string
 
     BotBlacklistEntryDto:
       type: object

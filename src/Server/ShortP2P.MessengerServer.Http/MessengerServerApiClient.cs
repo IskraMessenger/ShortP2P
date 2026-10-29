@@ -143,6 +143,65 @@ public sealed class MessengerServerApiClient(
         await MessengerServerJson.EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task PutBlobChunkAsync(
+        string blobId,
+        int chunkIndex,
+        string targetNetworkId,
+        int totalChunks,
+        long totalBytes,
+        ReadOnlyMemory<byte> ciphertext,
+        CancellationToken cancellationToken = default)
+    {
+        Require.NotNullOrWhiteSpace(blobId);
+        Require.NotNullOrWhiteSpace(targetNetworkId);
+        if (chunkIndex < 0)
+            throw new ArgumentOutOfRangeException(nameof(chunkIndex));
+
+        var url =
+            $"{BlobLimits.BlobChunk(blobId, chunkIndex)}" +
+            $"?targetNetworkId={Uri.EscapeDataString(targetNetworkId.Trim())}" +
+            $"&totalChunks={totalChunks}&totalBytes={totalBytes}";
+        using var content = new ByteArrayContent(ciphertext.ToArray());
+        content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
+        using var request = new HttpRequestMessage(HttpMethod.Put, url) { Content = content };
+        request.Headers.TryAddWithoutValidation(BlobLimits.TargetNetworkIdHeader, targetNetworkId.Trim());
+
+        using var response = await httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        await MessengerServerJson.EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<BlobChunkManifestDto> GetBlobChunkManifestAsync(
+        string blobId,
+        CancellationToken cancellationToken = default)
+    {
+        Require.NotNullOrWhiteSpace(blobId);
+
+        using var response = await httpClient
+            .GetAsync(BlobLimits.BlobChunks(blobId), cancellationToken)
+            .ConfigureAwait(false);
+        return await MessengerServerJson
+            .ReadJsonAsync<BlobChunkManifestDto>(response, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async Task<byte[]> GetBlobChunkAsync(
+        string blobId,
+        int chunkIndex,
+        CancellationToken cancellationToken = default)
+    {
+        Require.NotNullOrWhiteSpace(blobId);
+        if (chunkIndex < 0)
+            throw new ArgumentOutOfRangeException(nameof(chunkIndex));
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, BlobLimits.BlobChunk(blobId, chunkIndex));
+        request.Headers.Accept.ParseAdd("application/octet-stream");
+        using var response = await httpClient
+            .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+            .ConfigureAwait(false);
+        await MessengerServerJson.EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
+        return await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task SubmitDeliveryReceiptAsync(
         DeliveryReceiptRequest request,
         CancellationToken cancellationToken = default)

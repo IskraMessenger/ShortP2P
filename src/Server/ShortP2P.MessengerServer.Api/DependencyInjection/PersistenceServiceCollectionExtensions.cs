@@ -50,6 +50,7 @@ public static class PersistenceServiceCollectionExtensions
             services.AddSingleton<IMessageInboxRepository, InMemoryMessageInboxRepository>();
             services.AddSingleton<IDeliveryTicketRepository, InMemoryDeliveryTicketRepository>();
             services.AddSingleton<IBlobRepository, InMemoryBlobRepository>();
+            services.AddSingleton<IBlobChunkRepository, InMemoryBlobChunkRepository>();
             services.AddSingleton<IBotToClientMessageRepository, InMemoryBotToClientMessageRepository>();
             services.AddSingleton<IClientToBotMessageRepository, InMemoryClientToBotMessageRepository>();
             services.AddSingleton<IBotBlacklistRepository, InMemoryBotBlacklistRepository>();

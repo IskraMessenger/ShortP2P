@@ -34,4 +34,11 @@ public interface IBotServerApi
     Task<BotWaitForIncomeMessagesResponse> WaitForIncomeMessagesAsync(
         BotWaitForIncomeMessagesRequest request,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// POST <see cref="ApiRoutes.BotServerReceipts"/> — confirm receipt; server drops the message and its chunks.
+    /// </summary>
+    Task SubmitReceiptAsync(
+        BotServerReceiptRequest request,
+        CancellationToken cancellationToken = default);
 }

@@ -14,6 +14,7 @@ public sealed class MessengerDbContext(DbContextOptions<MessengerDbContext> opti
     public DbSet<MessageInboxRecord> MessageInboxes => Set<MessageInboxRecord>();
     public DbSet<DeliveryTicketRecord> DeliveryTickets => Set<DeliveryTicketRecord>();
     public DbSet<BlobRecord> Blobs => Set<BlobRecord>();
+    public DbSet<BlobChunkRecord> BlobChunks => Set<BlobChunkRecord>();
     public DbSet<BotToClientMessageRecord> BotToClientMessages => Set<BotToClientMessageRecord>();
     public DbSet<ClientToBotMessageRecord> ClientToBotMessages => Set<ClientToBotMessageRecord>();
     public DbSet<BotBlacklistRecord> BotBlacklist => Set<BotBlacklistRecord>();
@@ -106,6 +107,17 @@ public sealed class MessengerDbContext(DbContextOptions<MessengerDbContext> opti
             e.Property(x => x.Ciphertext).HasColumnType("bytea");
             e.HasIndex(x => x.CreatedUtc);
             e.HasIndex(x => x.TgtNetworkId);
+        });
+
+        modelBuilder.Entity<BlobChunkRecord>(e =>
+        {
+            e.ToTable("blob_chunks");
+            e.HasKey(x => new { x.BlobId, x.ChunkIndex });
+            e.Property(x => x.BlobId).HasMaxLength(128);
+            e.Property(x => x.SrcNetworkId).HasMaxLength(64);
+            e.Property(x => x.TgtNetworkId).HasMaxLength(64);
+            e.Property(x => x.Ciphertext).HasColumnType("bytea");
+            e.HasIndex(x => x.CreatedUtc);
         });
 
         modelBuilder.Entity<BotToClientMessageRecord>(e =>

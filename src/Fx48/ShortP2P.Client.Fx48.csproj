@@ -28,6 +28,15 @@
     <Compile Include="..\ShortP2P.Client\Services\SqlitePeerProfileStore.cs" />
     <Compile Include="..\ShortP2P.Client\Services\AuthLocalPeerProfileSource.cs" />
     <Compile Include="..\ShortP2P.Client\ChatMedia\ChatWireCodec.cs" />
+    <Compile Include="..\ShortP2P.Client\ChatMedia\ChatWireMessage.cs" />
+    <Compile Include="..\ShortP2P.Client\ChatMedia\ChatWireText.cs" />
+    <Compile Include="..\ShortP2P.Client\ChatMedia\ChatWireImage.cs" />
+    <Compile Include="..\ShortP2P.Client\ChatMedia\ChatWireFile.cs" />
+    <Compile Include="..\ShortP2P.Client\ChatMedia\ChatWireTransferOffer.cs" />
+    <Compile Include="..\ShortP2P.Client\ChatMedia\ChatWireTransferControl.cs" />
+    <Compile Include="..\ShortP2P.Client\ChatMedia\ChatWireUserInfo.cs" />
+    <Compile Include="..\ShortP2P.Client\ChatMedia\BotBlobChunker.cs" />
+    <Compile Include="..\ShortP2P.Client\ChatMedia\BotChunkRetry.cs" />
     <Compile Include="..\ShortP2P.Client\ChatMedia\ChatMediaOptions.cs" />
     <Compile Include="..\ShortP2P.Client\ChatMedia\DocumentAttachHelper.cs" />
     <Compile Include="..\ShortP2P.Client\ChatMedia\ImageAttachHelper.cs" />
@@ -52,6 +61,9 @@
     <Compile Include="..\ShortP2P.Client\Routing\LocalEndpointHelper.cs" />
     <Compile Include="..\ShortP2P.Client\Routing\ChatInviteCodec.cs" />
     <Compile Include="..\ShortP2P.Client\Services\ChatRepository.cs" />
+    <Compile Include="..\ShortP2P.Client\Services\ChatMessageAppendedEventArgs.cs" />
+    <Compile Include="..\ShortP2P.Client\Services\ChatCreatedEventArgs.cs" />
+    <Compile Include="..\ShortP2P.Client\Services\PeerPublicKeyChangedEventArgs.cs" />
     <Compile Include="..\ShortP2P.Client\Services\ChatDeliveryPath.cs" />
     <Compile Include="..\ShortP2P.Client\Services\PeerBlacklist.cs" />
     <Compile Include="..\ShortP2P.Client\Services\ChatSessionCache.cs" />

@@ -87,4 +87,16 @@ public sealed class BotServerApiClient(HttpClient httpClient) : IBotServerApi
             .ReadJsonAsync<BotWaitForIncomeMessagesResponse>(response, cancellationToken)
             .ConfigureAwait(false);
     }
+
+    public async Task SubmitReceiptAsync(
+        BotServerReceiptRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        Require.NotNull(request);
+
+        using var response = await httpClient
+            .PostAsync(ApiRoutes.BotServerReceipts, MessengerServerJson.ToJsonContent(request), cancellationToken)
+            .ConfigureAwait(false);
+        await MessengerServerJson.EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
+    }
 }

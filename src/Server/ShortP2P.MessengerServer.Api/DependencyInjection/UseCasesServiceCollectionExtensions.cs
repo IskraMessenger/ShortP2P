@@ -1,3 +1,4 @@
+using ShortP2P.MessengerServer.Api.Hosting;
 using ShortP2P.MessengerServer.Api.HostPowers;
 using ShortP2P.MessengerServer.Infrastructure.BotRateLimit;
 using ShortP2P.MessengerServer.UseCases.Abstractions;
@@ -29,6 +30,7 @@ public static class UseCasesServiceCollectionExtensions
         services.AddSingleton<IClientToBotWaitService, ClientToBotWaitService>();
         services.AddSingleton<IForwardHub, InMemoryForwardHub>();
         services.AddSingleton<IHostHardwareInfoProvider, OsHostHardwareInfoProvider>();
+        services.AddSingleton<IServerDiskSpace, DriveServerDiskSpace>();
         services.AddSingleton<IHostLoadInfoProvider, OsHostLoadInfoProvider>();
         services.AddSingleton<IBotRateLimiter, InMemoryBotRateLimiter>();
         services.AddScoped<HostPowersMeasurementService>();
@@ -45,6 +47,9 @@ public static class UseCasesServiceCollectionExtensions
         services.AddScoped<PutBlobUseCase>();
         services.AddScoped<GetBlobUseCase>();
         services.AddScoped<DeleteBlobUseCase>();
+        services.AddScoped<PutBlobChunkUseCase>();
+        services.AddScoped<GetBlobChunkUseCase>();
+        services.AddScoped<GetBlobChunkManifestUseCase>();
         services.AddScoped<ForwardPeerProfileUseCase>();
         services.AddScoped<PollInboxEventsUseCase>();
         services.AddScoped<BotBlacklistService>();
@@ -56,6 +61,7 @@ public static class UseCasesServiceCollectionExtensions
         services.AddScoped<RemoveBotUseCase>();
         services.AddScoped<DeliverBotMessagesUseCase>();
         services.AddScoped<WaitForClientMessagesUseCase>();
+        services.AddScoped<AcknowledgeClientMessageUseCase>();
         services.AddScoped<WaitForBotMessagesUseCase>();
         services.AddScoped<SendMessageToBotUseCase>();
         services.AddScoped<AcknowledgeBotMessageUseCase>();

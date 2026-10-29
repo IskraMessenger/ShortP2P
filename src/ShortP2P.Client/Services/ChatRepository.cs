@@ -8,28 +8,6 @@ using SQLite;
 
 namespace ShortP2P.Client.Services;
 
-public sealed class ChatMessageAppendedEventArgs(int chatId, bool outgoing) : EventArgs
-{
-    public int ChatId { get; } = chatId;
-    public bool Outgoing { get; } = outgoing;
-}
-
-public sealed class ChatCreatedEventArgs(int chatId, bool remote) : EventArgs
-{
-    public int ChatId { get; } = chatId;
-    /// <summary>True — чат появился извне (invite / сервер), не создан вручную пользователем.</summary>
-    public bool Remote { get; } = remote;
-}
-
-public sealed class PeerPublicKeyChangedEventArgs : EventArgs
-{
-    public int ChatId { get; init; }
-    public string PeerNickname { get; init; } = "";
-    public string PeerNetworkIdShort { get; init; } = "";
-    public string PreviousSafetyNumber { get; init; } = "";
-    public string NewSafetyNumber { get; init; } = "";
-}
-
 public sealed class ChatRepository(AppDatabase appDatabase, PeerBlacklist? blacklist = null)
 {
     private readonly SemaphoreSlim _addChatGate = new(1, 1);
@@ -1031,7 +1009,8 @@ public sealed class ChatRepository(AppDatabase appDatabase, PeerBlacklist? black
         long transferSizeBytes,
         string transferHost,
         int transferPort,
-        long transferExpiresUtcTicks)
+        long transferExpiresUtcTicks,
+        int transferChunkCount = 0)
     {
         var text = string.IsNullOrWhiteSpace(displayText)
             ? (string.IsNullOrWhiteSpace(transferFileName) ? "[Входящее вложение]" : transferFileName.Trim())
@@ -1056,7 +1035,8 @@ public sealed class ChatRepository(AppDatabase appDatabase, PeerBlacklist? black
                 TransferHost = transferHost?.Trim() ?? "",
                 TransferPort = transferPort,
                 TransferExpiresUtcTicks = transferExpiresUtcTicks,
-                TransferState = (int)ChatTransferState.AwaitingClick
+                TransferState = (int)ChatTransferState.AwaitingClick,
+                TransferChunkCount = Math.Max(0, transferChunkCount)
             };
             await conn.InsertAsync(msg).ConfigureAwait(false);
 
@@ -1237,6 +1217,18 @@ public sealed class ChatRepository(AppDatabase appDatabase, PeerBlacklist? black
                 0,
                 expiresUtcTicks,
                 (int)ChatTransferState.Offered,
+                messageId)
+            .ConfigureAwait(false);
+    }
+
+    public async Task UpdateBotChunkLocatorAsync(int messageId, string host, int chunkCount, string sha256)
+    {
+        var conn = await _db.GetConnectionAsync().ConfigureAwait(false);
+        await conn.ExecuteAsync(
+                "UPDATE messages SET TransferHost = ?, TransferChunkCount = ?, TransferToken = ? WHERE Id = ?",
+                host?.Trim() ?? "",
+                Math.Max(0, chunkCount),
+                sha256?.Trim() ?? "",
                 messageId)
             .ConfigureAwait(false);
     }

@@ -47,6 +47,24 @@ public interface IMessengerServerApi
     /// <summary>DELETE <see cref="ApiRoutes.Blobs"/>/{blobId} — remove blob after successful receipt.</summary>
     Task DeleteBlobAsync(string blobId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// PUT <see cref="ApiRoutes.Blobs"/>/{blobId}/chunks/{index} — store one ciphertext chunk of a bot attachment.
+    /// </summary>
+    Task PutBlobChunkAsync(
+        string blobId,
+        int chunkIndex,
+        string targetNetworkId,
+        int totalChunks,
+        long totalBytes,
+        ReadOnlyMemory<byte> ciphertext,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>GET <see cref="ApiRoutes.Blobs"/>/{blobId}/chunks — indexes already stored.</summary>
+    Task<BlobChunkManifestDto> GetBlobChunkManifestAsync(string blobId, CancellationToken cancellationToken = default);
+
+    /// <summary>GET <see cref="ApiRoutes.Blobs"/>/{blobId}/chunks/{index} — one ciphertext chunk.</summary>
+    Task<byte[]> GetBlobChunkAsync(string blobId, int chunkIndex, CancellationToken cancellationToken = default);
+
     /// <summary>POST <see cref="ApiRoutes.MessageReceipts"/> — submit a delivery receipt (deletes this device's inbox copy).</summary>
     Task SubmitDeliveryReceiptAsync(DeliveryReceiptRequest request, CancellationToken cancellationToken = default);
 
