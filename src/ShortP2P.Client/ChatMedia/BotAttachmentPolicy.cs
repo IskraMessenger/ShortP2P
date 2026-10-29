@@ -1,4 +1,5 @@
 using ShortP2P.Discovery;
+using ShortP2P.MediaTypes;
 
 namespace ShortP2P.Client.ChatMedia;
 
@@ -12,69 +13,28 @@ public static class BotAttachmentPolicy
     public const int MaxVideoBytes = 50 * 1024 * 1024;
     public const int MaxAudioBytes = 10 * 1024 * 1024;
 
-    private static readonly HashSet<string> Documents = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "application/msword",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "application/vnd.ms-excel",
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "application/vnd.ms-powerpoint",
-        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-        "application/pdf",
-        "application/vnd.oasis.opendocument.text",
-        "application/vnd.oasis.opendocument.spreadsheet",
-        "application/vnd.oasis.opendocument.presentation",
-        "application/rtf",
-        "application/x-abiword"
-    };
-
-    private static readonly HashSet<string> Images = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "image/png",
-        "image/jpeg",
-        "image/gif",
-        "image/webp"
-    };
-
-    private static readonly HashSet<string> Videos = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "video/mp4",
-        "video/ogg",
-        "video/x-msvideo",
-        "video/quicktime",
-        "video/webm"
-    };
-
-    private static readonly HashSet<string> Audio = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "audio/mpeg",
-        "audio/ogg",
-        "audio/mp4",
-        "audio/x-m4a"
-    };
-
     public static bool TryClassify(string? mimeType, out BotAttachmentKind kind)
     {
         var mime = mimeType?.Trim() ?? "";
-        if (Images.Contains(mime))
+        if (ImageMimeTypes.All.Contains(mime))
         {
             kind = BotAttachmentKind.Image;
             return true;
         }
 
-        if (Audio.Contains(mime))
+        if (AudioMimeTypes.All.Contains(mime))
         {
             kind = BotAttachmentKind.Audio;
             return true;
         }
 
-        if (Videos.Contains(mime))
+        if (VideoMimeTypes.All.Contains(mime))
         {
             kind = BotAttachmentKind.Video;
             return true;
         }
 
-        if (Documents.Contains(mime))
+        if (DocumentMimeTypes.All.Contains(mime))
         {
             kind = BotAttachmentKind.Document;
             return true;
