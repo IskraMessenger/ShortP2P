@@ -8,10 +8,10 @@ namespace ShortP2P.Client.ChatMedia;
 /// </summary>
 public static class BotAttachmentPolicy
 {
-    public const int MaxDocumentBytes = 10 * 1024 * 1024;
-    public const int MaxImageBytes = 10 * 1024 * 1024;
-    public const int MaxVideoBytes = 50 * 1024 * 1024;
-    public const int MaxAudioBytes = 10 * 1024 * 1024;
+    public const int MaxDocumentBytes = 10485760;
+    public const int MaxImageBytes = 10485760;
+    public const int MaxVideoBytes = 52428800;
+    public const int MaxAudioBytes = 10485760;
 
     public static bool TryClassify(string? mimeType, out BotAttachmentKind kind)
     {
@@ -44,7 +44,7 @@ public static class BotAttachmentPolicy
         return false;
     }
 
-    public static int CategoryMaxBytes(BotAttachmentKind kind) => kind switch
+    private static int CategoryMaxBytes(BotAttachmentKind kind) => kind switch
     {
         BotAttachmentKind.Image => MaxImageBytes,
         BotAttachmentKind.Document => MaxDocumentBytes,
