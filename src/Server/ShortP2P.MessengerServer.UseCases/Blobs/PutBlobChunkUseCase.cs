@@ -4,7 +4,11 @@ using ShortP2P.MessengerServer.UseCases.Abstractions;
 
 namespace ShortP2P.MessengerServer.UseCases.Blobs;
 
-public sealed class PutBlobChunkUseCase(IBlobChunkRepository chunks, IClock clock)
+public sealed class PutBlobChunkUseCase(
+    IBlobChunkRepository chunks,
+    IClock clock,
+    IBotAccountRepository bots,
+    IServerDiskSpace disk)
 {
     public async Task ExecuteAsync(PutBlobChunkCommand command, CancellationToken cancellationToken = default)
     {
@@ -48,6 +52,19 @@ public sealed class PutBlobChunkUseCase(IBlobChunkRepository chunks, IClock cloc
                 return;
 
             throw UseCaseException.Conflict("A chunk with this index already exists.");
+        }
+
+        var sender = await bots.FindByNetworkIdAsync(src, cancellationToken).ConfigureAwait(false);
+        if (sender != null)
+        {
+            var reserved = await chunks
+                .SumIncompleteUploadBytesAsync(blobId, cancellationToken)
+                .ConfigureAwait(false);
+            if (!BotUploadDiskBudget.Fits(disk.AvailableFreeBytes, reserved, totalBytes))
+            {
+                throw UseCaseException.InsufficientStorage(
+                    "Not enough free space to accept this bot upload.");
+            }
         }
 
         await chunks.AddAsync(

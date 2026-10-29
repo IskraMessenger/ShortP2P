@@ -12,7 +12,7 @@ public class BlobChunkUseCaseTests
     public async Task Put_SameBytes_IsIdempotent_DifferentBytes_Conflict()
     {
         var repo = new MemoryChunks();
-        var put = new PutBlobChunkUseCase(repo, new FakeClock(TestHarness.T0));
+        var put = Put(repo);
         var bytes = new byte[] { 1, 2, 3 };
 
         await put.ExecuteAsync(new PutBlobChunkCommand("m1", 0, "alice", "bot", 1, bytes.Length, bytes));
@@ -29,7 +29,7 @@ public class BlobChunkUseCaseTests
     {
         var repo = new MemoryChunks();
         var clock = new FakeClock(TestHarness.T0);
-        var put = new PutBlobChunkUseCase(repo, clock);
+        var put = Put(repo, clock);
         var first = new byte[BlobLimitsSize()];
         var last = new byte[] { 7, 8 };
         first[0] = 4;
@@ -52,7 +52,7 @@ public class BlobChunkUseCaseTests
     [Fact]
     public async Task Put_WhenMiddleChunkIsShort_ThrowsValidation()
     {
-        var put = new PutBlobChunkUseCase(new MemoryChunks(), new FakeClock(TestHarness.T0));
+        var put = Put(new MemoryChunks());
         var ex = await Assert.ThrowsAsync<UseCaseException>(() =>
             put.ExecuteAsync(new PutBlobChunkCommand("m1", 0, "alice", "bot", 2, 60, new byte[60])));
         Assert.Equal("Validation", ex.Code);
@@ -80,6 +80,76 @@ public class BlobChunkUseCaseTests
         Assert.Null(await messages.FindByIdAsync("m1"));
         Assert.False(await chunks.HasAnyAsync("m1"));
     }
+
+    [Fact]
+    public async Task Put_FromBot_RejectsWhenOtherUploadsLeaveNoBudget()
+    {
+        var repo = new MemoryChunks();
+        await repo.AddAsync(Incomplete("other", totalBytes: 300, storedChunks: 1, declaredChunks: 2));
+        await repo.AddAsync(Complete("done", totalBytes: 900));
+
+        var put = Put(repo, bots: new MemoryBots("bot"), disk: new FixedDisk(1000));
+        var ex = await Assert.ThrowsAsync<UseCaseException>(() =>
+            put.ExecuteAsync(new PutBlobChunkCommand("m2", 0, "bot", "alice", 1, 501, new byte[501])));
+
+        Assert.Equal("InsufficientStorage", ex.Code);
+        Assert.False(await repo.HasAnyAsync("m2"));
+    }
+
+    [Fact]
+    public async Task Put_FromBot_AcceptsWhenBudgetCoversTheFile()
+    {
+        var repo = new MemoryChunks();
+        await repo.AddAsync(Incomplete("other", totalBytes: 300, storedChunks: 1, declaredChunks: 2));
+        var put = Put(repo, bots: new MemoryBots("bot"), disk: new FixedDisk(1000));
+
+        await put.ExecuteAsync(new PutBlobChunkCommand("m2", 0, "bot", "alice", 1, 500, new byte[500]));
+        await put.ExecuteAsync(new PutBlobChunkCommand("m2", 0, "bot", "alice", 1, 500, new byte[500]));
+
+        Assert.True(await repo.HasAnyAsync("m2"));
+    }
+
+    [Fact]
+    public async Task Put_FromClient_IgnoresDiskBudget()
+    {
+        var repo = new MemoryChunks();
+        var put = Put(repo, bots: new MemoryBots("bot"), disk: new FixedDisk(0));
+
+        await put.ExecuteAsync(new PutBlobChunkCommand("m2", 0, "alice", "bot", 1, 3, [1, 2, 3]));
+
+        Assert.True(await repo.HasAnyAsync("m2"));
+    }
+
+    private static PutBlobChunkUseCase Put(
+        MemoryChunks repo,
+        IClock? clock = null,
+        IBotAccountRepository? bots = null,
+        IServerDiskSpace? disk = null) =>
+        new(repo, clock ?? new FakeClock(TestHarness.T0), bots ?? new NoBots(), disk ?? new FixedDisk(long.MaxValue));
+
+    private static BlobChunk Incomplete(string id, long totalBytes, int storedChunks, int declaredChunks) => new()
+    {
+        BlobId = id,
+        ChunkIndex = storedChunks - 1,
+        SrcNetworkId = "alice",
+        TgtNetworkId = "bob",
+        TotalChunks = declaredChunks,
+        TotalBytes = totalBytes,
+        Ciphertext = [1],
+        CreatedUtc = TestHarness.T0
+    };
+
+    private static BlobChunk Complete(string id, long totalBytes) => new()
+    {
+        BlobId = id,
+        ChunkIndex = 0,
+        SrcNetworkId = "alice",
+        TgtNetworkId = "bob",
+        TotalChunks = 1,
+        TotalBytes = totalBytes,
+        Ciphertext = [1],
+        CreatedUtc = TestHarness.T0
+    };
 
     private static int BlobLimitsSize() =>
         ShortP2P.MessengerServer.Contracts.BlobLimits.ChunkSizeBytes;
@@ -109,6 +179,16 @@ public class BlobChunkUseCaseTests
 
         public Task<bool> HasAnyAsync(string blobId, CancellationToken cancellationToken = default) =>
             Task.FromResult(_items.Keys.Any(k => k.Id == blobId));
+
+        public Task<long> SumIncompleteUploadBytesAsync(string excludeBlobId, CancellationToken cancellationToken = default)
+        {
+            var sum = _items.Values
+                .Where(c => !string.Equals(c.BlobId, excludeBlobId, StringComparison.Ordinal))
+                .GroupBy(c => c.BlobId, StringComparer.Ordinal)
+                .Where(g => g.Count() < g.First().TotalChunks)
+                .Sum(g => g.First().TotalBytes);
+            return Task.FromResult(sum);
+        }
 
         public Task AddAsync(BlobChunk chunk, CancellationToken cancellationToken = default)
         {
@@ -159,5 +239,59 @@ public class BlobChunkUseCaseTests
 
         public Task RemoveOlderThanAsync(DateTime cutoffUtc, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
+    }
+
+    private sealed class NoBots : IBotAccountRepository
+    {
+        public Task<BotAccount?> FindByNetworkIdAsync(string networkId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<BotAccount?>(null);
+
+        public Task<BotAccount?> FindByBotNameAsync(string botName, CancellationToken cancellationToken = default) =>
+            Task.FromResult<BotAccount?>(null);
+
+        public Task AddAsync(BotAccount account, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+
+        public Task RemoveAsync(string networkId, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+
+        public Task<IReadOnlyList<BotAccount>> ListAllAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<BotAccount>>([]);
+    }
+
+    private sealed class MemoryBots(string networkId) : IBotAccountRepository
+    {
+        private readonly BotAccount _account = new()
+        {
+            NetworkId = networkId,
+            BotName = networkId,
+            BotReadableName = networkId,
+            BotDescription = "",
+            KeySalt = "s",
+            KeyHash = "h",
+            CertificateFingerprintSha256 = new string('a', 64),
+            MessagePublicKey = "{}",
+            CreatedAtUtc = TestHarness.T0
+        };
+
+        public Task<BotAccount?> FindByNetworkIdAsync(string id, CancellationToken cancellationToken = default) =>
+            Task.FromResult<BotAccount?>(string.Equals(id, _account.NetworkId, StringComparison.Ordinal) ? _account : null);
+
+        public Task<BotAccount?> FindByBotNameAsync(string botName, CancellationToken cancellationToken = default) =>
+            Task.FromResult<BotAccount?>(null);
+
+        public Task AddAsync(BotAccount account, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+
+        public Task RemoveAsync(string id, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+
+        public Task<IReadOnlyList<BotAccount>> ListAllAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<BotAccount>>([_account]);
+    }
+
+    private sealed class FixedDisk(long bytes) : IServerDiskSpace
+    {
+        public long AvailableFreeBytes => bytes;
     }
 }

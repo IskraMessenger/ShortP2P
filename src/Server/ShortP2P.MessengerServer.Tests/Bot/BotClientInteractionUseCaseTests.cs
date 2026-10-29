@@ -345,6 +345,9 @@ public class BotClientInteractionUseCaseTests
         public Task<bool> HasAnyAsync(string blobId, CancellationToken cancellationToken = default) =>
             Task.FromResult(false);
 
+        public Task<long> SumIncompleteUploadBytesAsync(string excludeBlobId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(0L);
+
         public Task AddAsync(BlobChunk chunk, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
 

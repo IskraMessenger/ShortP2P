@@ -23,6 +23,17 @@ public sealed class InMemoryBlobChunkRepository(InMemoryMessengerStore store) : 
     public Task<bool> HasAnyAsync(string blobId, CancellationToken cancellationToken = default) =>
         Task.FromResult(store.BlobChunks.Keys.Any(k => string.Equals(k.BlobId, blobId, StringComparison.Ordinal)));
 
+    public Task<long> SumIncompleteUploadBytesAsync(string excludeBlobId, CancellationToken cancellationToken = default)
+    {
+        var sum = store.BlobChunks.Values
+            .ToArray()
+            .Where(c => !string.Equals(c.BlobId, excludeBlobId, StringComparison.Ordinal))
+            .GroupBy(c => c.BlobId, StringComparer.Ordinal)
+            .Where(g => g.Count() < g.First().TotalChunks)
+            .Sum(g => g.First().TotalBytes);
+        return Task.FromResult(sum);
+    }
+
     public Task AddAsync(BlobChunk chunk, CancellationToken cancellationToken = default)
     {
         store.BlobChunks[(chunk.BlobId, chunk.ChunkIndex)] = chunk;

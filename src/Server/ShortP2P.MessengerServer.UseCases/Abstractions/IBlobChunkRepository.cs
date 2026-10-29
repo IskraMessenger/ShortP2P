@@ -10,6 +10,12 @@ public interface IBlobChunkRepository
 
     Task<bool> HasAnyAsync(string blobId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Declared sizes of uploads that still miss at least one chunk.
+    /// <paramref name="excludeBlobId"/> is the upload being accepted and is not included.
+    /// </summary>
+    Task<long> SumIncompleteUploadBytesAsync(string excludeBlobId, CancellationToken cancellationToken = default);
+
     Task AddAsync(BlobChunk chunk, CancellationToken cancellationToken = default);
 
     Task RemoveByBlobIdAsync(string blobId, CancellationToken cancellationToken = default);

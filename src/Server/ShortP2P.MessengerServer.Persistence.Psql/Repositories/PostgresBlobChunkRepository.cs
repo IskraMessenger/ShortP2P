@@ -30,6 +30,32 @@ public sealed class PostgresBlobChunkRepository(MessengerDbContext db) : IBlobCh
     public Task<bool> HasAnyAsync(string blobId, CancellationToken cancellationToken = default) =>
         db.BlobChunks.AsNoTracking().AnyAsync(x => x.BlobId == blobId, cancellationToken);
 
+    public async Task<long> SumIncompleteUploadBytesAsync(
+        string excludeBlobId,
+        CancellationToken cancellationToken = default)
+    {
+        var groups = await db.BlobChunks.AsNoTracking()
+            .Where(x => x.BlobId != excludeBlobId)
+            .GroupBy(x => x.BlobId)
+            .Select(g => new
+            {
+                TotalBytes = g.Max(x => x.TotalBytes),
+                Declared = g.Max(x => x.TotalChunks),
+                Stored = g.Count()
+            })
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        long sum = 0;
+        foreach (var group in groups)
+        {
+            if (group.Stored < group.Declared)
+                sum += group.TotalBytes;
+        }
+
+        return sum;
+    }
+
     public async Task AddAsync(BlobChunk chunk, CancellationToken cancellationToken = default)
     {
         db.BlobChunks.Add(BlobChunkRecord.FromDomain(chunk));

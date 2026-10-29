@@ -27,6 +27,7 @@ internal static class UseCaseExceptionActionResultExtensions
                 "PayloadTooLarge" => StatusCodes.Status413PayloadTooLarge,
                 "TooManyRequests" => StatusCodes.Status429TooManyRequests,
                 "Unavailable" => StatusCodes.Status503ServiceUnavailable,
+                "InsufficientStorage" => StatusCodes.Status507InsufficientStorage,
                 _ => StatusCodes.Status400BadRequest
             },
             new ApiError { Code = ex.Code, Message = ex.Message });

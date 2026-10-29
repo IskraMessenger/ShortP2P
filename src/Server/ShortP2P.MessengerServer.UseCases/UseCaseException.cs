@@ -31,6 +31,8 @@ public sealed class UseCaseException : Exception
 
     public static UseCaseException Unavailable(string message) => new("Unavailable", message);
 
+    public static UseCaseException InsufficientStorage(string message) => new("InsufficientStorage", message);
+
     public static UseCaseException TooManyRequests(string message, int? retryAfterSeconds = null) =>
         new("TooManyRequests", message, retryAfterSeconds);
 }

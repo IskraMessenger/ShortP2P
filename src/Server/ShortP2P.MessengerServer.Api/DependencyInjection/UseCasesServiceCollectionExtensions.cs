@@ -1,3 +1,4 @@
+using ShortP2P.MessengerServer.Api.Hosting;
 using ShortP2P.MessengerServer.Api.HostPowers;
 using ShortP2P.MessengerServer.Infrastructure.BotRateLimit;
 using ShortP2P.MessengerServer.UseCases.Abstractions;
@@ -29,6 +30,7 @@ public static class UseCasesServiceCollectionExtensions
         services.AddSingleton<IClientToBotWaitService, ClientToBotWaitService>();
         services.AddSingleton<IForwardHub, InMemoryForwardHub>();
         services.AddSingleton<IHostHardwareInfoProvider, OsHostHardwareInfoProvider>();
+        services.AddSingleton<IServerDiskSpace, DriveServerDiskSpace>();
         services.AddSingleton<IHostLoadInfoProvider, OsHostLoadInfoProvider>();
         services.AddSingleton<IBotRateLimiter, InMemoryBotRateLimiter>();
         services.AddScoped<HostPowersMeasurementService>();

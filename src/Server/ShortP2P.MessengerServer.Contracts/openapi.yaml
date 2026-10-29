@@ -278,6 +278,8 @@ paths:
           description: Accepted. The same bytes for this index may be sent again.
         '409':
           description: This index already stores different bytes
+        '507':
+          description: Sender is a bot and the server has no room for this upload
     get:
       operationId: getBlobChunk
       summary: Download one ciphertext chunk
