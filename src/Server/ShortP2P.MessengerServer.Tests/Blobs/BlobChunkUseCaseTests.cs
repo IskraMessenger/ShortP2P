@@ -97,6 +97,48 @@ public class BlobChunkUseCaseTests
     }
 
     [Fact]
+    public async Task Put_FromBot_RejectsWhenFileExceedsEightyPercentOfFreeSpace()
+    {
+        // 0.8 * 1000 = 800; 801 exceeds the free-space budget with no other uploads.
+        var repo = new MemoryChunks();
+        var put = Put(repo, bots: new MemoryBots("bot"), disk: new FixedDisk(1000));
+        var ex = await Assert.ThrowsAsync<UseCaseException>(() =>
+            put.ExecuteAsync(new PutBlobChunkCommand("m2", 0, "bot", "alice", 1, 801, new byte[801])));
+
+        Assert.Equal("InsufficientStorage", ex.Code);
+        Assert.False(await repo.HasAnyAsync("m2"));
+    }
+
+    [Fact]
+    public async Task Put_FromBot_RejectsWhenDiskIsEmpty()
+    {
+        var repo = new MemoryChunks();
+        var put = Put(repo, bots: new MemoryBots("bot"), disk: new FixedDisk(0));
+        var ex = await Assert.ThrowsAsync<UseCaseException>(() =>
+            put.ExecuteAsync(new PutBlobChunkCommand("m2", 0, "bot", "alice", 1, 1, [1])));
+
+        Assert.Equal("InsufficientStorage", ex.Code);
+        Assert.False(await repo.HasAnyAsync("m2"));
+    }
+
+    [Fact]
+    public async Task Put_FromBot_RejectsWhenSumOfIncompleteUploadsExhaustsBudget()
+    {
+        // 0.8 * 1000 = 800; two incomplete uploads reserve 500 + 300 = 800.
+        var repo = new MemoryChunks();
+        await repo.AddAsync(Incomplete("a", totalBytes: 500, storedChunks: 1, declaredChunks: 2));
+        await repo.AddAsync(Incomplete("b", totalBytes: 300, storedChunks: 1, declaredChunks: 3));
+
+        var put = Put(repo, bots: new MemoryBots("bot"), disk: new FixedDisk(1000));
+        var ex = await Assert.ThrowsAsync<UseCaseException>(() =>
+            put.ExecuteAsync(new PutBlobChunkCommand("m2", 0, "bot", "alice", 1, 1, [1])));
+
+        Assert.Equal("InsufficientStorage", ex.Code);
+        Assert.False(await repo.HasAnyAsync("m2"));
+        Assert.Equal(800, await repo.SumIncompleteUploadBytesAsync("m2"));
+    }
+
+    [Fact]
     public async Task Put_FromBot_AcceptsWhenBudgetCoversTheFile()
     {
         var repo = new MemoryChunks();
@@ -105,6 +147,17 @@ public class BlobChunkUseCaseTests
 
         await put.ExecuteAsync(new PutBlobChunkCommand("m2", 0, "bot", "alice", 1, 500, new byte[500]));
         await put.ExecuteAsync(new PutBlobChunkCommand("m2", 0, "bot", "alice", 1, 500, new byte[500]));
+
+        Assert.True(await repo.HasAnyAsync("m2"));
+    }
+
+    [Fact]
+    public async Task Put_FromBot_AcceptsExactlyEightyPercentOfFreeSpace()
+    {
+        var repo = new MemoryChunks();
+        var put = Put(repo, bots: new MemoryBots("bot"), disk: new FixedDisk(1000));
+
+        await put.ExecuteAsync(new PutBlobChunkCommand("m2", 0, "bot", "alice", 1, 800, new byte[800]));
 
         Assert.True(await repo.HasAnyAsync("m2"));
     }
