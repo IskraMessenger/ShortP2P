@@ -106,7 +106,11 @@ public sealed class ChatP2PSession
 
         var state = (ChatTransferState)row.TransferState;
         if (state == ChatTransferState.Received && row.ImageBlob is { Length: > 0 })
+        {
+            if (_chat.IsBot && row.TransferChunkCount > 0)
+                await ReceiptBotBlobAsync(row, cancellationToken).ConfigureAwait(false);
             return;
+        }
         if (state == ChatTransferState.Transferring)
             return;
 
@@ -140,7 +144,36 @@ public sealed class ChatP2PSession
             return false;
 
         var hint = LooksLikeHttpBaseUrl(row.TransferHost) ? row.TransferHost : null;
-        var ciphertext = await _servers.TryDownloadBlobAsync(blobId, hint, cancellationToken).ConfigureAwait(false);
+        var chunked = _chat.IsBot && row.TransferChunkCount > 0;
+        byte[]? ciphertext;
+        if (chunked)
+        {
+            ciphertext = await _servers.TryDownloadBotChunksAsync(
+                    blobId,
+                    hint,
+                    row.TransferChunkCount,
+                    CiphertextShaOrNull(row.TransferToken),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        else
+        {
+            ciphertext = await _servers.TryDownloadBlobAsync(
+                    blobId, hint, cancellationToken, botServersOnly: _chat.IsBot)
+                .ConfigureAwait(false);
+            if ((ciphertext == null || ciphertext.Length == 0) && _chat.IsBot)
+            {
+                ciphertext = await _servers.TryDownloadBotChunksAsync(
+                        blobId,
+                        hint,
+                        0,
+                        CiphertextShaOrNull(row.TransferToken),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                chunked = ciphertext is { Length: > 0 };
+            }
+        }
+
         if (ciphertext == null || ciphertext.Length == 0)
             return false;
 
@@ -196,7 +229,10 @@ public sealed class ChatP2PSession
 
         try
         {
-            await _servers.TryDeleteBlobAsync(blobId, cancellationToken).ConfigureAwait(false);
+            if (chunked)
+                await ReceiptBotBlobAsync(row, cancellationToken).ConfigureAwait(false);
+            else
+                await _servers.TryDeleteBlobAsync(blobId, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -208,6 +244,34 @@ public sealed class ChatP2PSession
         }
 
         return true;
+    }
+
+    private async Task ReceiptBotBlobAsync(ChatMessageEntity row, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(row.TransferId))
+            return;
+        var hint = LooksLikeHttpBaseUrl(row.TransferHost) ? row.TransferHost : null;
+        await _servers.TrySubmitBotMessageReceiptAsync(row.TransferId.Trim(), hint, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>Bot offers store the ciphertext SHA-256 in the token. A TCP token must not be checked as a hash.</summary>
+    private static string? CiphertextShaOrNull(string? token)
+    {
+        var value = token?.Trim() ?? "";
+        if (value.Length != 64)
+            return null;
+        for (var i = 0; i < value.Length; i++)
+        {
+            var c = value[i];
+            var hex = (c >= '0' && c <= '9') ||
+                      (c >= 'a' && c <= 'f') ||
+                      (c >= 'A' && c <= 'F');
+            if (!hex)
+                return null;
+        }
+
+        return value;
     }
 
     private static bool LooksLikeHttpBaseUrl(string? host) =>

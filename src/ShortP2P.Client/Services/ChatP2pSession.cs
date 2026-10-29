@@ -1882,7 +1882,9 @@ public sealed class ChatP2PSession : IAsyncDisposable
         }
         else
         {
-            ciphertext = await servers.TryDownloadBlobAsync(blobId, hint, cancellationToken).ConfigureAwait(false);
+            ciphertext = await servers.TryDownloadBlobAsync(
+                    blobId, hint, cancellationToken, botServersOnly: _chat.IsBot)
+                .ConfigureAwait(false);
         }
 
         if (ciphertext == null || ciphertext.Length == 0)
