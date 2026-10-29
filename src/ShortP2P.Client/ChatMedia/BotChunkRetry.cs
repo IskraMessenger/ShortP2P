@@ -11,7 +11,8 @@ public static class BotChunkRetry
         Func<int, TimeSpan>? delayForAttempt = null,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(action);
+        if (action == null)
+            throw new ArgumentNullException(nameof(action));
         shouldRetry ??= static ex => ex is not OperationCanceledException;
         delayForAttempt ??= static attempt => TimeSpan.FromMilliseconds(200 * (1 << (attempt - 1)));
 
@@ -45,7 +46,8 @@ public static class BotChunkRetry
         Func<int, TimeSpan>? delayForAttempt = null,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(action);
+        if (action == null)
+            throw new ArgumentNullException(nameof(action));
         T? result = default;
         await RunAsync(
             async ct => { result = await action(ct).ConfigureAwait(false); },

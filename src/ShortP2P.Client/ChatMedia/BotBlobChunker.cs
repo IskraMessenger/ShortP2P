@@ -25,7 +25,8 @@ public static class BotBlobChunker
 
     public static byte[] Join(IReadOnlyList<byte[]> chunks)
     {
-        ArgumentNullException.ThrowIfNull(chunks);
+        if (chunks == null)
+            throw new ArgumentNullException(nameof(chunks));
         var length = 0;
         foreach (var chunk in chunks)
             length += chunk?.Length ?? 0;
@@ -43,6 +44,15 @@ public static class BotBlobChunker
         return result;
     }
 
-    public static string Sha256Hex(ReadOnlySpan<byte> ciphertext) =>
-        Convert.ToHexString(SHA256.HashData(ciphertext)).ToLowerInvariant();
+    public static string Sha256Hex(ReadOnlySpan<byte> ciphertext)
+    {
+#if NETCOREAPP
+        var hash = SHA256.HashData(ciphertext);
+        return Convert.ToHexString(hash).ToLowerInvariant();
+#else
+        using var sha = SHA256.Create();
+        var hash = sha.ComputeHash(ciphertext.ToArray());
+        return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+#endif
+    }
 }
