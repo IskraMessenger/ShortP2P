@@ -4,4 +4,5 @@ public sealed record LoginBotCommand(
     string NetworkId,
     string BotName,
     string BotKey,
-    string FingerprintSha256);
+    string FingerprintSha256,
+    int Version);

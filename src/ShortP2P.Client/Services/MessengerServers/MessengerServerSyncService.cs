@@ -37,6 +37,7 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
     private readonly ChatRepository _chats;
     private readonly ChatSessionCache _sessions;
     private readonly MessengerServerManager _manager;
+    private readonly IBotVersionRepository? _botVersions;
     private readonly IPeerProfileStore? _peerProfiles;
     private readonly ILocalPeerProfileSource? _localProfile;
     private readonly ILogger<MessengerServerSyncService> _logger;
@@ -59,6 +60,7 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
         ChatRepository chats,
         ChatSessionCache sessions,
         MessengerServerManager manager,
+        IBotVersionRepository? botVersions = null,
         IPeerProfileStore? peerProfiles = null,
         ILocalPeerProfileSource? localProfile = null,
         ILogger<MessengerServerSyncService>? logger = null)
@@ -67,6 +69,7 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
         _chats = chats ?? throw new global::System.ArgumentNullException(nameof(chats));
         _sessions = sessions ?? throw new global::System.ArgumentNullException(nameof(sessions));
         _manager = manager ?? throw new global::System.ArgumentNullException(nameof(manager));
+        _botVersions = botVersions;
         _peerProfiles = peerProfiles;
         _localProfile = localProfile;
         _logger = logger ?? NullLogger<MessengerServerSyncService>.Instance;
@@ -224,6 +227,46 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
         var self = user.NetworkIdShort.Trim();
         var ready = await _manager.EnsureAllActiveReadyAsync(cancellationToken).ConfigureAwait(false);
         return await ListRemoteBotsAsync(ready, self, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Saved bot versions keyed by canonical network id.
+    /// The same bot on several servers is one string of every version and endpoint.
+    /// </summary>
+    public async Task<IReadOnlyDictionary<string, string>> DescribeBotVersionsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        if (_botVersions == null)
+            return new Dictionary<string, string>(StringComparer.Ordinal);
+
+        var rows = await _botVersions.ListAllAsync(cancellationToken).ConfigureAwait(false);
+        var grouped = new Dictionary<string, List<BotVersionPlace>>(StringComparer.Ordinal);
+        foreach (var row in rows)
+        {
+            var id = ChatRepository.CanonicalPeerNetworkId(row.BotNetworkId);
+            if (id.Length == 0 || row.Version < 0)
+                continue;
+            var endpoint = row.Endpoint?.Trim() ?? "";
+            if (endpoint.Length == 0)
+                continue;
+            if (!grouped.TryGetValue(id, out var list))
+            {
+                list = [];
+                grouped[id] = list;
+            }
+
+            list.Add(new BotVersionPlace(row.Version, endpoint));
+        }
+
+        var result = new Dictionary<string, string>(grouped.Count, StringComparer.Ordinal);
+        foreach (var pair in grouped)
+        {
+            var text = BotVersionText.Format(pair.Value);
+            if (text.Length > 0)
+                result[pair.Key] = text;
+        }
+
+        return result;
     }
 
     /// <summary>Directory rows for <see cref="LocalNetworkScanner.ApplyBotDirectory"/>.</summary>
@@ -1447,9 +1490,65 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
                 if (!byId.ContainsKey(id))
                     byId[id] = bot;
             }
+
+            await SaveBotVersionsAsync(conn, list, cancellationToken).ConfigureAwait(false);
         }
 
         return byId.Values.ToArray();
+    }
+
+    private async Task SaveBotVersionsAsync(
+        MessengerServerConnection conn,
+        IReadOnlyList<BotCatalogDto> bots,
+        CancellationToken cancellationToken)
+    {
+        if (_botVersions == null || bots.Count == 0)
+            return;
+
+        var server = conn.Entity;
+        string endpoint;
+        try
+        {
+            endpoint = BotVersionText.EndpointFromBaseUrl(server.BaseUrl);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogDebug(ex, "Bot version save skipped; base URL is invalid on server {ServerId}", server.Id);
+            return;
+        }
+
+        var fingerprint = MessengerServerConnection.NormalizeFingerprint(server.FingerprintSha256);
+        foreach (var bot in bots)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var id = bot.NetworkId?.Trim() ?? "";
+            if (id.Length == 0)
+                continue;
+
+            try
+            {
+                var reported = await conn.Api.GetBotVersionAsync(id, cancellationToken).ConfigureAwait(false);
+                var reportedId = ChatRepository.CanonicalPeerNetworkId(reported.BotNetworkId);
+                if (reportedId.Length == 0 || reported.Version < 0)
+                    continue;
+
+                await _botVersions.UpsertAsync(
+                    new BotVersionEntity
+                    {
+                        ServerId = server.Id,
+                        BotNetworkId = reportedId,
+                        Version = reported.Version,
+                        Endpoint = endpoint,
+                        FingerprintSha256 = fingerprint,
+                        UpdatedUtcTicks = DateTime.UtcNow.Ticks
+                    },
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogDebug(ex, "GetBotVersion failed for {BotId} on {BaseUrl}", id, server.BaseUrl);
+            }
+        }
     }
 
     private async Task<ClientPresenceDto?> FindPeerPresenceAsync(

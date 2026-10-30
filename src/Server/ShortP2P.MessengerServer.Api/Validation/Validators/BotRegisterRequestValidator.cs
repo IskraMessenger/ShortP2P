@@ -16,5 +16,6 @@ public sealed class BotRegisterRequestValidator : AbstractValidator<BotRegisterR
         RuleFor(x => x.MessagePublicKey)
             .RequiredTrimmed("messagePublicKey is required.")
             .MaximumLength(BotLimits.MaxMessagePublicKeyLength);
+        RuleFor(x => x.Version).GreaterThanOrEqualTo(0).WithMessage("version is invalid.");
     }
 }

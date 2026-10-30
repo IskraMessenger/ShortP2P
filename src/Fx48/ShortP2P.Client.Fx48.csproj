@@ -22,6 +22,7 @@
     <Compile Include="..\ShortP2P.Client\Data\MessageDeliveryStatus.cs" />
     <Compile Include="..\ShortP2P.Client\Data\OutgoingServerMessageEntity.cs" />
     <Compile Include="..\ShortP2P.Client\Data\MessengerServerEntity.cs" />
+    <Compile Include="..\ShortP2P.Client\Data\BotVersionEntity.cs" />
     <Compile Include="..\ShortP2P.Client\Data\PeerBlacklistEntity.cs" />
     <Compile Include="..\ShortP2P.Client\Data\PeerProfileEntity.cs" />
     <Compile Include="..\ShortP2P.Client\Data\SqliteUserAuthRepository.cs" />

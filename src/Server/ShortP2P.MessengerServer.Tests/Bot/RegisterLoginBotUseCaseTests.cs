@@ -30,7 +30,8 @@ public class RegisterLoginBotUseCaseTests
             "Echo Bot",
             "desc",
             separated,
-            "{\"k\":\"bot-pub\"}"));
+            "{\"k\":\"bot-pub\"}",
+            1));
 
         Assert.Equal(FixedBotKey, result.BotKey);
         Assert.Equal(ServerFingerprint, result.ServerFingerprintSha256);
@@ -39,6 +40,7 @@ public class RegisterLoginBotUseCaseTests
         Assert.NotNull(stored);
         Assert.Equal(BotFingerprint, stored.CertificateFingerprintSha256);
         Assert.Equal("{\"k\":\"bot-pub\"}", stored.MessagePublicKey);
+        Assert.Equal(1, stored.Version);
     }
 
     [Fact]
@@ -46,13 +48,14 @@ public class RegisterLoginBotUseCaseTests
     {
         var h = new Harness();
         await h.Register().ExecuteAsync(new RegisterBotCommand(
-            "bot-net", "echo", "Echo Bot", "desc", BotFingerprint, "{\"k\":\"bot-pub\"}"));
+            "bot-net", "echo", "Echo Bot", "desc", BotFingerprint, "{\"k\":\"bot-pub\"}", 1));
 
         var login = await h.Login().ExecuteAsync(new LoginBotCommand(
-            "bot-net", "echo", FixedBotKey, BotFingerprint.ToUpperInvariant()));
+            "bot-net", "echo", FixedBotKey, BotFingerprint.ToUpperInvariant(), 2));
 
         Assert.StartsWith("tok:bot-net:", login.Token);
         Assert.Equal(ServerFingerprint, login.ServerFingerprintSha256);
+        Assert.Equal(2, (await h.Bots.FindByNetworkIdAsync("bot-net"))!.Version);
     }
 
     [Fact]
@@ -60,11 +63,11 @@ public class RegisterLoginBotUseCaseTests
     {
         var h = new Harness();
         await h.Register().ExecuteAsync(new RegisterBotCommand(
-            "bot-net", "echo", "Echo Bot", "desc", BotFingerprint, "{\"k\":\"bot-pub\"}"));
+            "bot-net", "echo", "Echo Bot", "desc", BotFingerprint, "{\"k\":\"bot-pub\"}", 1));
 
         var ex = await Assert.ThrowsAsync<UseCaseException>(() =>
             h.Login().ExecuteAsync(new LoginBotCommand(
-                "bot-net", "echo", FixedBotKey, new string('c', 64))));
+                "bot-net", "echo", FixedBotKey, new string('c', 64), 2)));
         Assert.Equal("Unauthorized", ex.Code);
     }
 
@@ -134,6 +137,18 @@ public class RegisterLoginBotUseCaseTests
             if (!_byNetwork.TryAdd(account.NetworkId, account) || !_byName.TryAdd(account.BotName, account))
                 throw new InvalidOperationException("Duplicate.");
             return Task.CompletedTask;
+        }
+
+        public Task<bool> UpdateVersionAsync(
+            string networkId,
+            int version,
+            CancellationToken cancellationToken = default)
+        {
+            if (!_byNetwork.TryGetValue(networkId, out var account))
+                return Task.FromResult(false);
+
+            account.Version = version;
+            return Task.FromResult(true);
         }
 
         public Task RemoveAsync(string networkId, CancellationToken cancellationToken = default)

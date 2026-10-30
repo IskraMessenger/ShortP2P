@@ -66,6 +66,7 @@ internal static class Program
         services.AddSingleton<ChatSessionCache>();
         services.AddSingleton<P2pCryptoSessionCache>();
         services.AddSingleton<IMessengerServerRepository, SqliteMessengerServerRepository>();
+        services.AddSingleton<IBotVersionRepository, SqliteBotVersionRepository>();
         services.AddSingleton<ProfileBackupService>();
         services.AddSingleton<DeviceIdProvider>();
         services.AddSingleton<MessengerServerManager>();

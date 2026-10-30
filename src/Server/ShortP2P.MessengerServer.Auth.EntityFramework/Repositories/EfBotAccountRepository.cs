@@ -31,6 +31,18 @@ public sealed class EfBotAccountRepository(AuthDbContext db) : IBotAccountReposi
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<bool> UpdateVersionAsync(
+        string networkId,
+        int version,
+        CancellationToken cancellationToken = default)
+    {
+        var updated = await db.Bots
+            .Where(x => x.NetworkId == networkId)
+            .ExecuteUpdateAsync(s => s.SetProperty(x => x.Version, version), cancellationToken)
+            .ConfigureAwait(false);
+        return updated > 0;
+    }
+
     public async Task RemoveAsync(string networkId, CancellationToken cancellationToken = default)
     {
         await db.Bots

@@ -67,6 +67,7 @@ public static class UseCasesServiceCollectionExtensions
         services.AddScoped<AcknowledgeBotMessageUseCase>();
         services.AddScoped<GetBotBlackListUseCase>();
         services.AddScoped<ListBotsUseCase>();
+        services.AddScoped<GetBotVersionUseCase>();
         services.AddScoped<AddBotToBlacklistUseCase>();
         services.AddScoped<RemoveBotFromBlacklistUseCase>();
         services.AddScoped<GetClientPresencesUseCase>();

@@ -11,6 +11,9 @@ public interface IBotAccountRepository
     /// <summary>Inserts the account. Throws <see cref="InvalidOperationException"/> when network id or bot name already exists.</summary>
     Task AddAsync(BotAccount account, CancellationToken cancellationToken = default);
 
+    /// <summary>Replaces the stored version. Returns false when <paramref name="networkId"/> is not registered.</summary>
+    Task<bool> UpdateVersionAsync(string networkId, int version, CancellationToken cancellationToken = default);
+
     Task RemoveAsync(string networkId, CancellationToken cancellationToken = default);
 
     /// <summary>All registered bots. Secrets stay on the account; callers must not expose them.</summary>

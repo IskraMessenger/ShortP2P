@@ -80,6 +80,7 @@ public class BotClientInteractionUseCaseTests
             KeyHash = "h",
             CertificateFingerprintSha256 = new string('a', 64),
             MessagePublicKey = "{\"k\":\"bot-pub\"}",
+            Version = 1,
             CreatedAtUtc = T0
         });
 
@@ -116,6 +117,7 @@ public class BotClientInteractionUseCaseTests
             KeyHash = "h",
             CertificateFingerprintSha256 = new string('a', 64),
             MessagePublicKey = "{\"k\":\"bot-pub\"}",
+            Version = 1,
             CreatedAtUtc = T0
         });
         await h.Blacklist.AddAsync("bot");
@@ -221,6 +223,18 @@ public class BotClientInteractionUseCaseTests
         {
             _items[account.NetworkId] = account;
             return Task.CompletedTask;
+        }
+
+        public Task<bool> UpdateVersionAsync(
+            string networkId,
+            int version,
+            CancellationToken cancellationToken = default)
+        {
+            if (!_items.TryGetValue(networkId, out var account))
+                return Task.FromResult(false);
+
+            account.Version = version;
+            return Task.FromResult(true);
         }
 
         public Task RemoveAsync(string networkId, CancellationToken cancellationToken = default)

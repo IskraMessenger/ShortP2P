@@ -26,6 +26,9 @@ public sealed class RegisterBotUseCase(
             var botDescription = command.BotDescription.Trim();
             var fingerprint = CertificateFingerprintRules.Normalize(command.FingerprintSha256);
             var messagePublicKey = command.MessagePublicKey.Trim();
+            var version = command.Version;
+            if (version < 0)
+                throw UseCaseException.Validation("version is invalid.");
 
             await blacklistGuard
                 .EnsureAllowedAsync(networkId, BotAccessOperations.Register, cancellationToken)
@@ -53,6 +56,7 @@ public sealed class RegisterBotUseCase(
                         KeyHash = hashed.Hash,
                         CertificateFingerprintSha256 = fingerprint,
                         MessagePublicKey = messagePublicKey,
+                        Version = version,
                         CreatedAtUtc = clock.UtcNow
                     },
                     cancellationToken).ConfigureAwait(false);

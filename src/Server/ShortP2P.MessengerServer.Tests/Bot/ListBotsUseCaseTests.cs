@@ -33,6 +33,7 @@ public class ListBotsUseCaseTests
         KeyHash = "hash",
         CertificateFingerprintSha256 = new string('a', 64),
         MessagePublicKey = string.IsNullOrWhiteSpace(networkId) ? "" : $"{{\"k\":\"{name}\"}}",
+        Version = 1,
         CreatedAtUtc = new DateTime(2026, 10, 18, 0, 0, 0, DateTimeKind.Utc)
     };
 
@@ -50,6 +51,18 @@ public class ListBotsUseCaseTests
         {
             _items[account.NetworkId] = account;
             return Task.CompletedTask;
+        }
+
+        public Task<bool> UpdateVersionAsync(
+            string networkId,
+            int version,
+            CancellationToken cancellationToken = default)
+        {
+            if (!_items.TryGetValue(networkId, out var account))
+                return Task.FromResult(false);
+
+            account.Version = version;
+            return Task.FromResult(true);
         }
 
         public Task RemoveAsync(string networkId, CancellationToken cancellationToken = default)

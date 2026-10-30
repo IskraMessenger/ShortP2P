@@ -86,6 +86,9 @@ public interface IMessengerServerApi
     /// <summary>GET <see cref="ApiRoutes.Bots"/> — registered bots (public fields only).</summary>
     Task<IReadOnlyList<BotCatalogDto>> GetBotsAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>GET /bots/{botNetworkId}/version — bot network id and version (JWT).</summary>
+    Task<BotVersionDto> GetBotVersionAsync(string botNetworkId, CancellationToken cancellationToken = default);
+
     /// <summary>GET <see cref="ApiRoutes.ServerTechPower"/> — host TotalPower (anonymous).</summary>
     Task<ServerPowerResponse> GetPowerAsync(CancellationToken cancellationToken = default);
 

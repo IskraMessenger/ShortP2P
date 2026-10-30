@@ -59,6 +59,10 @@ public static class ApiRoutes
     /// <summary>GET registered bots for authorized clients (public fields only).</summary>
     public const string Bots = Prefix + "/bots";
 
+    /// <summary>GET <c>/bots/{botNetworkId}/version</c> — one bot's network id and version (JWT).</summary>
+    public static string BotVersion(string botNetworkId) =>
+        $"{Bots}/{Uri.EscapeDataString(botNetworkId.Trim())}/version";
+
     /// <summary>GET bot blacklist for authorized clients.</summary>
     public const string BotBlacklist = Prefix + "/bots/blacklist";
 
