@@ -1,8 +1,13 @@
 namespace ShortP2P.MessengerServer.Contracts;
 
-/// <summary>HTTPS API route constants for messenger server v1.</summary>
+/// <summary>
+/// HTTPS API route constants for messenger server.
+/// Current API version is <c>1</c>; it is part of <see cref="Prefix"/> (<c>/api/v1</c>).
+/// Controllers mount resources under that prefix, e.g. <c>[Route($"{ApiRoutes.Prefix}/bots")]</c> → <c>/api/v1/bots</c>.
+/// </summary>
 public static class ApiRoutes
 {
+    /// <summary>Versioned base path for the current HTTP API (<c>/api/v1</c>).</summary>
     public const string Prefix = "/api/v1";
 
     public const string Register = Prefix + "/auth/register";

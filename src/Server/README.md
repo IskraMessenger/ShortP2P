@@ -158,6 +158,10 @@ EF Core 8 + Npgsql: сущности-записи, репозитории, ми�
 
 ## HTTPS API (`/api/v1`)
 
+Актуальная версия API — **1** (`ApiRoutes.Prefix = "/api/v1"`). Версия входит в путь;
+ресурсы (в т.ч. боты) монтируются как `[Route($"{ApiRoutes.Prefix}/…")]`, например `/api/v1/bots`.
+Подробнее: [`Contracts/README.md`](ShortP2P.MessengerServer.Contracts/README.md#версионирование-api).
+
 | Метод | Путь | Auth | Описание | Типичный код |
 |-------|------|------|----------|--------------|
 | `POST` | `/auth/register` | — | Регистрация (nick, networkId, password) | `201` / `409` |
