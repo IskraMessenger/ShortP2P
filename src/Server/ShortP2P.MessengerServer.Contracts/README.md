@@ -3,11 +3,27 @@
 Контракт HTTPS API центрального сервера мессенджера: DTO, константы маршрутов, скелет
 `IMessengerServerApi` и `openapi.yaml`. Реализации хоста в этом проекте нет.
 
+## Версионирование API
+
+Актуальная версия HTTP API — **1**. Она задаётся путевым префиксом
+`ApiRoutes.Prefix = "/api/v1"`. Все эндпоинты (включая взаимодействие с ботами) живут под ним.
+
+Контроллеры монтируют ресурс относительно префикса, например:
+
+```csharp
+[Route($"{ApiRoutes.Prefix}/bots")]                 // → /api/v1/bots
+[Route($"{ApiRoutes.Prefix}/bot_server_interaction")] // → /api/v1/bot_server_interaction
+[Route($"{ApiRoutes.Prefix}/bot_client_interaction")] // → /api/v1/bot_client_interaction
+```
+
+Клиенты и боты должны вызывать только `/api/v1/...`. Следующая мажорная версия API
+потребует отдельного префикса (`/api/v2/...`) и параллельных констант/контроллеров.
+
 ## Структура
 
 | Файл / папка | Назначение |
 |--------------|------------|
-| `ApiRoutes.cs` | Пути `/api/v1/...` |
+| `ApiRoutes.cs` | Пути `/api/v1/...` (`Prefix` = версионированная база) |
 | `IMessengerServerApi.cs` | Операции API без реализации |
 | `Dtos/` | Request/response модели |
 | `openapi.yaml` | OpenAPI 3 описание |
