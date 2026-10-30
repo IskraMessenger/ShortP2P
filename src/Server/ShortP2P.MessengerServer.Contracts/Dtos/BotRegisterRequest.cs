@@ -29,4 +29,11 @@ public sealed class BotRegisterRequest
 
     /// <summary>Bot software version. Zero or greater.</summary>
     public required int Version { get; init; }
+
+    /// <summary>
+    /// Commands from the bot's <c>bot_commands</c> file.
+    /// Stored by the server and returned to clients by GetBotCommands.
+    /// <see cref="BotCommandDto.Args"/> is null or empty when a command takes no arguments.
+    /// </summary>
+    public IReadOnlyList<BotCommandDto>? Commands { get; init; }
 }

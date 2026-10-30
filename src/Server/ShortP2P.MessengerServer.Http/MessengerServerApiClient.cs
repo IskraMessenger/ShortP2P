@@ -279,6 +279,21 @@ public sealed class MessengerServerApiClient(
             .ConfigureAwait(false);
     }
 
+    public async Task<BotCommandsDto> GetBotCommandsAsync(
+        string botNetworkId,
+        CancellationToken cancellationToken = default)
+    {
+        Require.NotNullOrWhiteSpace(botNetworkId);
+
+        using var response = await httpClient
+            .GetAsync(ApiRoutes.BotCommands(botNetworkId), cancellationToken)
+            .ConfigureAwait(false);
+
+        return await MessengerServerJson
+            .ReadJsonAsync<BotCommandsDto>(response, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     public async Task<ServerPowerResponse> GetPowerAsync(CancellationToken cancellationToken = default)
     {
         using var response = await httpClient

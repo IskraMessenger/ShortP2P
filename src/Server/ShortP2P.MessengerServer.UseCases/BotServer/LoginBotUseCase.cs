@@ -26,6 +26,7 @@ public sealed class LoginBotUseCase(
             var version = command.Version;
             if (version < 0)
                 throw UseCaseException.Validation("version is invalid.");
+            var commands = BotCommandNormalizer.Normalize(command.Commands);
 
             await blacklistGuard
                 .EnsureAllowedAsync(command.NetworkId, BotAccessOperations.Login, cancellationToken)
@@ -43,7 +44,7 @@ public sealed class LoginBotUseCase(
             if (!CertificateFingerprintRules.AreEqual(account.CertificateFingerprintSha256, fingerprint))
                 throw UseCaseException.Unauthorized("Invalid bot credentials.");
 
-            if (!await accounts.UpdateVersionAsync(account.NetworkId, version, cancellationToken).ConfigureAwait(false))
+            if (!await accounts.UpdateReportAsync(account.NetworkId, version, commands, cancellationToken).ConfigureAwait(false))
                 throw UseCaseException.NotFound("Bot was not found.");
 
             var token = tokenService.IssueToken(account.NetworkId, BotDeviceId);

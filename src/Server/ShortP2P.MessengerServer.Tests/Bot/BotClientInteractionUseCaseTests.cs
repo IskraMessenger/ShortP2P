@@ -225,15 +225,17 @@ public class BotClientInteractionUseCaseTests
             return Task.CompletedTask;
         }
 
-        public Task<bool> UpdateVersionAsync(
+        public Task<bool> UpdateReportAsync(
             string networkId,
             int version,
+            IReadOnlyList<BotCommand> commands,
             CancellationToken cancellationToken = default)
         {
             if (!_items.TryGetValue(networkId, out var account))
                 return Task.FromResult(false);
 
             account.Version = version;
+            account.Commands = commands;
             return Task.FromResult(true);
         }
 

@@ -20,7 +20,8 @@ public sealed class BotsController(
     AddBotToBlacklistUseCase addBotToBlacklist,
     RemoveBotFromBlacklistUseCase removeBotFromBlacklist,
     ListBotsUseCase listBots,
-    GetBotVersionUseCase getBotVersion) : ControllerBase
+    GetBotVersionUseCase getBotVersion,
+    GetBotCommandsUseCase getBotCommands) : ControllerBase
 {
     /// <summary>Registered bots for selection (authorized clients, no secrets).</summary>
     [HttpGet]
@@ -56,6 +57,31 @@ public sealed class BotsController(
                 .ExecuteAsync(new GetBotVersionQuery(networkId), cancellationToken)
                 .ConfigureAwait(false);
             return Ok(version);
+        }
+        catch (UseCaseException ex)
+        {
+            return this.ToApiErrorResult(ex);
+        }
+    }
+
+    /// <summary>Command list last reported by one registered bot (authorized clients).</summary>
+    [HttpGet("{networkId}/commands")]
+    public async Task<IActionResult> GetBotCommandsAsync(string networkId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await ValidationGate
+                .EnsureValidAsync(
+                    HttpContext.RequestServices,
+                    new BotNetworkIdArgument(networkId),
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            _ = HttpContext.RequireNetworkId();
+            var commands = await getBotCommands
+                .ExecuteAsync(new GetBotCommandsQuery(networkId), cancellationToken)
+                .ConfigureAwait(false);
+            return Ok(commands);
         }
         catch (UseCaseException ex)
         {

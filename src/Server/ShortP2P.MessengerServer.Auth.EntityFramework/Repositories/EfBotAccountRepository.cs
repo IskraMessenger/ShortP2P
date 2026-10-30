@@ -31,14 +31,20 @@ public sealed class EfBotAccountRepository(AuthDbContext db) : IBotAccountReposi
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<bool> UpdateVersionAsync(
+    public async Task<bool> UpdateReportAsync(
         string networkId,
         int version,
+        IReadOnlyList<BotCommand> commands,
         CancellationToken cancellationToken = default)
     {
+        var commandsJson = BotCommandsJson.Serialize(commands);
         var updated = await db.Bots
             .Where(x => x.NetworkId == networkId)
-            .ExecuteUpdateAsync(s => s.SetProperty(x => x.Version, version), cancellationToken)
+            .ExecuteUpdateAsync(
+                s => s
+                    .SetProperty(x => x.Version, version)
+                    .SetProperty(x => x.CommandsJson, commandsJson),
+                cancellationToken)
             .ConfigureAwait(false);
         return updated > 0;
     }
