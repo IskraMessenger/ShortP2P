@@ -21,6 +21,9 @@ public sealed class BotAccount
     /// <summary>RSA public key JSON for client ↔ bot message encryption (same shape as ChatRequest).</summary>
     public required string MessagePublicKey { get; init; }
 
+    /// <summary>Bot software version reported at registration and refreshed on login.</summary>
+    public required int Version { get; set; }
+
     /// <summary>Creation time UTC.</summary>
     public required DateTime CreatedAtUtc { get; init; }
 }

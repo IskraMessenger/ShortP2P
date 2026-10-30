@@ -36,7 +36,8 @@ public sealed class BotServerInteractionController(
                     request.BotReadableName,
                     request.BotDescription,
                     request.FingerprintSha256,
-                    request.MessagePublicKey),
+                    request.MessagePublicKey,
+                    request.Version),
                 cancellationToken).ConfigureAwait(false);
 
             return StatusCode(StatusCodes.Status201Created, new BotRegisterResponse
@@ -69,7 +70,8 @@ public sealed class BotServerInteractionController(
                     request.NetworkId,
                     request.BotName,
                     request.BotKey,
-                    request.FingerprintSha256),
+                    request.FingerprintSha256,
+                    request.Version),
                 cancellationToken).ConfigureAwait(false);
 
             return Ok(new BotLoginResponse

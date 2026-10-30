@@ -156,6 +156,7 @@ public sealed class AppDatabase
         await connection.CreateTableAsync<OutgoingServerMessageEntity>().ConfigureAwait(false);
         await connection.CreateTableAsync<BleDiscoveredPeerEntity>().ConfigureAwait(false);
         await connection.CreateTableAsync<MessengerServerEntity>().ConfigureAwait(false);
+        await connection.CreateTableAsync<BotVersionEntity>().ConfigureAwait(false);
         await connection.CreateTableAsync<PeerBlacklistEntity>().ConfigureAwait(false);
         await connection.CreateTableAsync<PeerProfileEntity>().ConfigureAwait(false);
 

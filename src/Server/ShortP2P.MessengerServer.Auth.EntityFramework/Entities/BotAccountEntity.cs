@@ -12,6 +12,7 @@ public sealed class BotAccountEntity
     public string KeyHash { get; set; } = "";
     public string CertificateFingerprintSha256 { get; set; } = "";
     public string MessagePublicKey { get; set; } = "";
+    public int Version { get; set; }
     public DateTime CreatedAtUtc { get; set; }
 
     public BotAccount ToDomain() => new()
@@ -24,6 +25,7 @@ public sealed class BotAccountEntity
         KeyHash = KeyHash,
         CertificateFingerprintSha256 = CertificateFingerprintSha256,
         MessagePublicKey = MessagePublicKey,
+        Version = Version,
         CreatedAtUtc = CreatedAtUtc
     };
 
@@ -37,6 +39,7 @@ public sealed class BotAccountEntity
         KeyHash = account.KeyHash,
         CertificateFingerprintSha256 = account.CertificateFingerprintSha256,
         MessagePublicKey = account.MessagePublicKey,
+        Version = account.Version,
         CreatedAtUtc = account.CreatedAtUtc
     };
 }

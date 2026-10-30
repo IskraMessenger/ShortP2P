@@ -82,7 +82,8 @@ public class RequestValidatorTests
             BotReadableName = "Echo",
             BotDescription = "desc",
             FingerprintSha256 = "short",
-            MessagePublicKey = "{\"k\":\"bot-pub\"}"
+            MessagePublicKey = "{\"k\":\"bot-pub\"}",
+            Version = 1
         });
         Assert.False(result.IsValid);
     }
@@ -97,7 +98,8 @@ public class RequestValidatorTests
             BotReadableName = "Echo",
             BotDescription = "desc",
             FingerprintSha256 = new string('a', 64),
-            MessagePublicKey = "   "
+            MessagePublicKey = "   ",
+            Version = 1
         });
         Assert.False(result.IsValid);
         Assert.Contains(result.Errors, e => e.PropertyName == nameof(BotRegisterRequest.MessagePublicKey));

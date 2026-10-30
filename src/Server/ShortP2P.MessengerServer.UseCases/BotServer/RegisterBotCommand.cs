@@ -6,4 +6,5 @@ public sealed record RegisterBotCommand(
     string BotReadableName,
     string BotDescription,
     string FingerprintSha256,
-    string MessagePublicKey);
+    string MessagePublicKey,
+    int Version);

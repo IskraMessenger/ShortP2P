@@ -11,5 +11,6 @@ public sealed class BotLoginRequestValidator : AbstractValidator<BotLoginRequest
         RuleFor(x => x.BotName).RequiredTrimmed("NetworkId, botName and botKey are required.");
         RuleFor(x => x.BotKey).BotKey();
         RuleFor(x => x.FingerprintSha256).CertificateFingerprintSha256();
+        RuleFor(x => x.Version).GreaterThanOrEqualTo(0).WithMessage("version is invalid.");
     }
 }

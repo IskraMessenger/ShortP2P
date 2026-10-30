@@ -26,4 +26,7 @@ public sealed class BotRegisterRequest
     /// Exposed to authorized clients via <see cref="BotCatalogDto"/>.
     /// </summary>
     public required string MessagePublicKey { get; init; }
+
+    /// <summary>Bot software version. Zero or greater.</summary>
+    public required int Version { get; init; }
 }

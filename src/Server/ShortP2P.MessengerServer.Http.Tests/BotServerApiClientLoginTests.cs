@@ -37,7 +37,8 @@ public sealed class BotServerApiClientLoginTests : IDisposable
             NetworkId = "bot-net-1",
             BotName = "echo",
             BotKey = BotKey,
-            FingerprintSha256 = botCert.FingerprintSha256
+            FingerprintSha256 = botCert.FingerprintSha256,
+            Version = 1
         });
 
         var sent = _host.ReadJson<BotLoginRequest>("POST", ApiRoutes.BotServerLogin);
@@ -66,7 +67,8 @@ public sealed class BotServerApiClientLoginTests : IDisposable
                 NetworkId = "bot-net-1",
                 BotName = "echo",
                 BotKey = BotKey,
-                FingerprintSha256 = botCert.FingerprintSha256
+                FingerprintSha256 = botCert.FingerprintSha256,
+            Version = 1
             }));
 
         Assert.Equal(HttpStatusCode.Unauthorized, ex.StatusCode);

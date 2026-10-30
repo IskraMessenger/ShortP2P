@@ -58,6 +58,23 @@ public sealed class LiteDbBotAccountRepository : IBotAccountRepository, IDisposa
         return Task.CompletedTask;
     }
 
+    public Task<bool> UpdateVersionAsync(
+        string networkId,
+        int version,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_gate)
+        {
+            var doc = _bots.FindById(networkId);
+            if (doc == null)
+                return Task.FromResult(false);
+
+            doc.Version = version;
+            return Task.FromResult(_bots.Update(doc));
+        }
+    }
+
     public Task RemoveAsync(string networkId, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();

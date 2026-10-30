@@ -93,6 +93,9 @@ partial class AuthDbContextModelSnapshot : ModelSnapshot
                     .HasMaxLength(16384)
                     .HasColumnType("TEXT");
 
+                b.Property<int>("Version")
+                    .HasColumnType("INTEGER");
+
                 b.HasKey("NetworkId");
 
                 b.HasIndex("BotName")

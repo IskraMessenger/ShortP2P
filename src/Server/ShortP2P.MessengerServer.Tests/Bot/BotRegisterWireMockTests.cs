@@ -70,7 +70,8 @@ public sealed class BotRegisterWireMockTests : IDisposable
             BotReadableName = "Echo Bot",
             BotDescription = "test",
             FingerprintSha256 = botCert.FingerprintSha256ColonSeparated,
-            MessagePublicKey = "{\"k\":\"bot-pub\"}"
+            MessagePublicKey = "{\"k\":\"bot-pub\"}",
+            Version = 1
         });
 
         var log = Assert.Single(_server.LogEntries);
@@ -112,7 +113,8 @@ public sealed class BotRegisterWireMockTests : IDisposable
             NetworkId = "bot-net-1",
             BotName = "echo",
             BotKey = IssuedBotKey,
-            FingerprintSha256 = botCert.FingerprintSha256
+            FingerprintSha256 = botCert.FingerprintSha256,
+            Version = 1
         });
 
         var log = Assert.Single(_server.LogEntries);
@@ -122,6 +124,7 @@ public sealed class BotRegisterWireMockTests : IDisposable
         Assert.True(
             CertificateFingerprintRules.AreEqual(botCert.FingerprintSha256, captured!.FingerprintSha256),
             "Login must present the same bot certificate fingerprint that was registered.");
+        Assert.Equal(1, captured.Version);
         Assert.Equal(ServerFingerprint, response.ServerFingerprintSha256);
         Assert.False(string.IsNullOrWhiteSpace(response.Token));
     }
@@ -152,7 +155,8 @@ public sealed class BotRegisterWireMockTests : IDisposable
                 BotReadableName = "Echo Bot",
                 BotDescription = "test",
                 FingerprintSha256 = botCert.FingerprintSha256,
-                MessagePublicKey = "{\"k\":\"bot-pub\"}"
+                MessagePublicKey = "{\"k\":\"bot-pub\"}",
+            Version = 1
             }));
 
         Assert.Equal(HttpStatusCode.BadRequest, ex.StatusCode);

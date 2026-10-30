@@ -305,6 +305,12 @@ public class BlobChunkUseCaseTests
         public Task AddAsync(BotAccount account, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
 
+        public Task<bool> UpdateVersionAsync(
+            string networkId,
+            int version,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(false);
+
         public Task RemoveAsync(string networkId, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
 
@@ -324,6 +330,7 @@ public class BlobChunkUseCaseTests
             KeyHash = "h",
             CertificateFingerprintSha256 = new string('a', 64),
             MessagePublicKey = "{}",
+            Version = 1,
             CreatedAtUtc = TestHarness.T0
         };
 
@@ -335,6 +342,18 @@ public class BlobChunkUseCaseTests
 
         public Task AddAsync(BotAccount account, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
+
+        public Task<bool> UpdateVersionAsync(
+            string networkId,
+            int version,
+            CancellationToken cancellationToken = default)
+        {
+            if (!string.Equals(networkId, _account.NetworkId, StringComparison.Ordinal))
+                return Task.FromResult(false);
+
+            _account.Version = version;
+            return Task.FromResult(true);
+        }
 
         public Task RemoveAsync(string id, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
