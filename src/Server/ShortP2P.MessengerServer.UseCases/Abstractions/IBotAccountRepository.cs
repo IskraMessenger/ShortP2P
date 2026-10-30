@@ -11,8 +11,15 @@ public interface IBotAccountRepository
     /// <summary>Inserts the account. Throws <see cref="InvalidOperationException"/> when network id or bot name already exists.</summary>
     Task AddAsync(BotAccount account, CancellationToken cancellationToken = default);
 
-    /// <summary>Replaces the stored version. Returns false when <paramref name="networkId"/> is not registered.</summary>
-    Task<bool> UpdateVersionAsync(string networkId, int version, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Replaces the stored version and command list.
+    /// Returns false when <paramref name="networkId"/> is not registered.
+    /// </summary>
+    Task<bool> UpdateReportAsync(
+        string networkId,
+        int version,
+        IReadOnlyList<BotCommand> commands,
+        CancellationToken cancellationToken = default);
 
     Task RemoveAsync(string networkId, CancellationToken cancellationToken = default);
 

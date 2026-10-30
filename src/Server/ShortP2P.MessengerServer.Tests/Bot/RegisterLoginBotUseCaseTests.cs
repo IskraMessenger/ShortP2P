@@ -6,6 +6,7 @@ using ShortP2P.MessengerServer.Tests.Fakes;
 using ShortP2P.MessengerServer.UseCases;
 using ShortP2P.MessengerServer.UseCases.Abstractions;
 using ShortP2P.MessengerServer.UseCases.BotBlacklist;
+using ShortP2P.MessengerServer.UseCases.BotCatalog;
 using ShortP2P.MessengerServer.UseCases.BotServer;
 
 namespace ShortP2P.MessengerServer.Tests.Bot;
@@ -69,6 +70,82 @@ public class RegisterLoginBotUseCaseTests
             h.Login().ExecuteAsync(new LoginBotCommand(
                 "bot-net", "echo", FixedBotKey, new string('c', 64), 2)));
         Assert.Equal("Unauthorized", ex.Code);
+    }
+
+    [Fact]
+    public async Task Register_StoresCommands_AndGetReturnsThem()
+    {
+        var h = new Harness();
+        var commands = new BotCommand[]
+        {
+            new()
+            {
+                Command = "/echo",
+                Args = [new BotCommandArgument { ArgName = "text", ArgType = "String" }],
+                Description = "Echo text"
+            },
+            new() { Command = "/start", Description = "Start" }
+        };
+
+        await h.Register().ExecuteAsync(new RegisterBotCommand(
+            "bot-net", "echo", "Echo Bot", "desc", BotFingerprint, "{\"k\":\"bot-pub\"}", 1, commands));
+
+        var stored = await h.Bots.FindByNetworkIdAsync("bot-net");
+        Assert.NotNull(stored);
+        Assert.Equal(2, stored.Commands.Count);
+        Assert.Equal("/echo", stored.Commands[0].Command);
+        var echoArg = Assert.Single(stored.Commands[0].Args!);
+        Assert.Equal("text", echoArg.ArgName);
+        Assert.Equal("string", echoArg.ArgType);
+        Assert.Null(stored.Commands[1].Args);
+
+        var listed = await new GetBotCommandsUseCase(h.Bots).ExecuteAsync(new GetBotCommandsQuery("bot-net"));
+        Assert.Equal("bot-net", listed.BotNetworkId);
+        Assert.Equal("/echo", listed.Commands[0].Command);
+        Assert.Equal("Start", listed.Commands[1].Description);
+    }
+
+    [Fact]
+    public async Task Login_ReplacesCommands()
+    {
+        var h = new Harness();
+        await h.Register().ExecuteAsync(new RegisterBotCommand(
+            "bot-net",
+            "echo",
+            "Echo Bot",
+            "desc",
+            BotFingerprint,
+            "{\"k\":\"bot-pub\"}",
+            1,
+            [new BotCommand
+            {
+                Command = "/echo",
+                Args = [new BotCommandArgument { ArgName = "text", ArgType = "string" }],
+                Description = "Echo text"
+            }]));
+
+        await h.Login().ExecuteAsync(new LoginBotCommand(
+            "bot-net",
+            "echo",
+            FixedBotKey,
+            BotFingerprint,
+            2,
+            [new BotCommand { Command = "/help", Description = "Help" }]));
+
+        var stored = await h.Bots.FindByNetworkIdAsync("bot-net");
+        var command = Assert.Single(stored!.Commands);
+        Assert.Equal("/help", command.Command);
+        Assert.Null(command.Args);
+        Assert.Equal(2, stored.Version);
+    }
+
+    [Fact]
+    public async Task GetCommands_WhenBotMissing_ThrowsNotFound()
+    {
+        var h = new Harness();
+        var ex = await Assert.ThrowsAsync<UseCaseException>(() =>
+            new GetBotCommandsUseCase(h.Bots).ExecuteAsync(new GetBotCommandsQuery("missing")));
+        Assert.Equal("NotFound", ex.Code);
     }
 
     private sealed class Harness
@@ -139,15 +216,17 @@ public class RegisterLoginBotUseCaseTests
             return Task.CompletedTask;
         }
 
-        public Task<bool> UpdateVersionAsync(
+        public Task<bool> UpdateReportAsync(
             string networkId,
             int version,
+            IReadOnlyList<BotCommand> commands,
             CancellationToken cancellationToken = default)
         {
             if (!_byNetwork.TryGetValue(networkId, out var account))
                 return Task.FromResult(false);
 
             account.Version = version;
+            account.Commands = commands;
             return Task.FromResult(true);
         }
 

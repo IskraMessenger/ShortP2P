@@ -27,4 +27,10 @@ public sealed class BotLoginRequest
     /// Replaces the version stored at registration.
     /// </summary>
     public required int Version { get; init; }
+
+    /// <summary>
+    /// Commands from the bot's <c>bot_commands</c> file.
+    /// Replaces the command list stored at registration.
+    /// </summary>
+    public IReadOnlyList<BotCommandDto>? Commands { get; init; }
 }

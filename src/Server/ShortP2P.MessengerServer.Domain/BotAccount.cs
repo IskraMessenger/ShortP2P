@@ -24,6 +24,9 @@ public sealed class BotAccount
     /// <summary>Bot software version reported at registration and refreshed on login.</summary>
     public required int Version { get; set; }
 
+    /// <summary>Commands last reported at registration and refreshed on login. Empty when the bot reported none.</summary>
+    public IReadOnlyList<BotCommand> Commands { get; set; } = [];
+
     /// <summary>Creation time UTC.</summary>
     public required DateTime CreatedAtUtc { get; init; }
 }

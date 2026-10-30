@@ -4,6 +4,7 @@ using ShortP2P.MessengerServer.Contracts;
 using ShortP2P.MessengerServer.Contracts.Dtos;
 using ShortP2P.MessengerServer.UseCases;
 using ShortP2P.MessengerServer.UseCases.Abstractions;
+using ShortP2P.MessengerServer.Domain;
 using ShortP2P.MessengerServer.UseCases.BotServer;
 
 namespace ShortP2P.MessengerServer.Api.Controllers.Bot;
@@ -37,7 +38,8 @@ public sealed class BotServerInteractionController(
                     request.BotDescription,
                     request.FingerprintSha256,
                     request.MessagePublicKey,
-                    request.Version),
+                    request.Version,
+                    MapCommands(request.Commands)),
                 cancellationToken).ConfigureAwait(false);
 
             return StatusCode(StatusCodes.Status201Created, new BotRegisterResponse
@@ -71,7 +73,8 @@ public sealed class BotServerInteractionController(
                     request.BotName,
                     request.BotKey,
                     request.FingerprintSha256,
-                    request.Version),
+                    request.Version,
+                    MapCommands(request.Commands)),
                 cancellationToken).ConfigureAwait(false);
 
             return Ok(new BotLoginResponse
@@ -202,4 +205,16 @@ public sealed class BotServerInteractionController(
             return this.ToApiErrorResult(ex);
         }
     }
+
+    private static IReadOnlyList<BotCommand>? MapCommands(IReadOnlyList<BotCommandDto>? commands) =>
+        commands?.Select(command => new BotCommand
+        {
+            Command = command.Command,
+            Args = command.Args?.Select(arg => new BotCommandArgument
+            {
+                ArgName = arg.ArgName,
+                ArgType = arg.ArgType
+            }).ToArray(),
+            Description = command.Description
+        }).ToArray();
 }

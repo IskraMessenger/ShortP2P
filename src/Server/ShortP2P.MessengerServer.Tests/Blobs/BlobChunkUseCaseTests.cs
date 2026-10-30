@@ -305,9 +305,10 @@ public class BlobChunkUseCaseTests
         public Task AddAsync(BotAccount account, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
 
-        public Task<bool> UpdateVersionAsync(
+        public Task<bool> UpdateReportAsync(
             string networkId,
             int version,
+            IReadOnlyList<BotCommand> commands,
             CancellationToken cancellationToken = default) =>
             Task.FromResult(false);
 
@@ -343,15 +344,17 @@ public class BlobChunkUseCaseTests
         public Task AddAsync(BotAccount account, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
 
-        public Task<bool> UpdateVersionAsync(
+        public Task<bool> UpdateReportAsync(
             string networkId,
             int version,
+            IReadOnlyList<BotCommand> commands,
             CancellationToken cancellationToken = default)
         {
             if (!string.Equals(networkId, _account.NetworkId, StringComparison.Ordinal))
                 return Task.FromResult(false);
 
             _account.Version = version;
+            _account.Commands = commands;
             return Task.FromResult(true);
         }
 

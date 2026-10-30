@@ -230,6 +230,44 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
     }
 
     /// <summary>
+    /// GET /bots/{id}/commands on ready trusted servers.
+    /// Returns the first non-empty list found for this bot network id.
+    /// </summary>
+    public async Task<IReadOnlyList<BotCommandDto>> FetchBotCommandsAsync(
+        string botNetworkId,
+        CancellationToken cancellationToken = default)
+    {
+        var id = ChatRepository.CanonicalPeerNetworkId(botNetworkId);
+        if (id.Length == 0)
+            return [];
+
+        var ready = await _manager.EnsureAllActiveReadyAsync(cancellationToken).ConfigureAwait(false);
+        foreach (var conn in ready)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!_manager.AllowsTraffic(conn))
+                continue;
+
+            try
+            {
+                var reported = await conn.Api.GetBotCommandsAsync(id, cancellationToken).ConfigureAwait(false);
+                var reportedId = ChatRepository.CanonicalPeerNetworkId(reported.BotNetworkId);
+                if (reportedId.Length == 0 ||
+                    !ChatRepository.PeerNetworkIdsEqual(reportedId, id))
+                    continue;
+
+                return reported.Commands ?? [];
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogDebug(ex, "GetBotCommands failed for {BotId} on {BaseUrl}", id, conn.Entity.BaseUrl);
+            }
+        }
+
+        return [];
+    }
+
+    /// <summary>
     /// Saved bot versions keyed by canonical network id.
     /// The same bot on several servers is one string of every version and endpoint.
     /// </summary>

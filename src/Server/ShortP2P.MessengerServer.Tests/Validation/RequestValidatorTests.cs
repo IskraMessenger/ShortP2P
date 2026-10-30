@@ -106,6 +106,79 @@ public class RequestValidatorTests
     }
 
     [Fact]
+    public async Task BotRegisterRequest_WhenCommandHasNoSlash_IsInvalid()
+    {
+        var result = await new BotRegisterRequestValidator().ValidateAsync(new BotRegisterRequest
+        {
+            NetworkId = "bot-net",
+            BotName = "echo",
+            BotReadableName = "Echo",
+            BotDescription = "desc",
+            FingerprintSha256 = new string('a', 64),
+            MessagePublicKey = "{\"k\":\"bot-pub\"}",
+            Version = 1,
+            Commands =
+            [
+                new BotCommandDto { Command = "start", Description = "Start" }
+            ]
+        });
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.ErrorMessage == "command is invalid.");
+    }
+
+    [Fact]
+    public async Task BotRegisterRequest_WhenCommandsDuplicate_IsInvalid()
+    {
+        var result = await new BotRegisterRequestValidator().ValidateAsync(new BotRegisterRequest
+        {
+            NetworkId = "bot-net",
+            BotName = "echo",
+            BotReadableName = "Echo",
+            BotDescription = "desc",
+            FingerprintSha256 = new string('a', 64),
+            MessagePublicKey = "{\"k\":\"bot-pub\"}",
+            Version = 1,
+            Commands =
+            [
+                new BotCommandDto { Command = "/start", Description = "Start" },
+                new BotCommandDto { Command = "/START", Description = "Start again" }
+            ]
+        });
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.ErrorMessage == "commands must be unique.");
+    }
+
+    [Fact]
+    public async Task BotRegisterRequest_WhenArgumentTypeUnknown_IsInvalid()
+    {
+        var result = await new BotRegisterRequestValidator().ValidateAsync(new BotRegisterRequest
+        {
+            NetworkId = "bot-net",
+            BotName = "echo",
+            BotReadableName = "Echo",
+            BotDescription = "desc",
+            FingerprintSha256 = new string('a', 64),
+            MessagePublicKey = "{\"k\":\"bot-pub\"}",
+            Version = 1,
+            Commands =
+            [
+                new BotCommandDto
+                {
+                    Command = "/GetText",
+                    Description = "Read text",
+                    Args =
+                    [
+                        new BotCommandArgumentDto { ArgName = "parameter1", ArgType = "string" },
+                        new BotCommandArgumentDto { ArgName = "count", ArgType = "integer" }
+                    ]
+                }
+            ]
+        });
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.ErrorMessage == "argType is invalid.");
+    }
+
+    [Fact]
     public async Task BotClientMessageDto_WhenNetworkIdUnsafe_IsInvalid()
     {
         var result = await new BotClientMessageDtoValidator().ValidateAsync(new BotClientMessageDto

@@ -1,3 +1,5 @@
+using ShortP2P.MessengerServer.Domain;
+
 namespace ShortP2P.MessengerServer.UseCases.BotServer;
 
 public sealed record RegisterBotCommand(
@@ -7,4 +9,5 @@ public sealed record RegisterBotCommand(
     string BotDescription,
     string FingerprintSha256,
     string MessagePublicKey,
-    int Version);
+    int Version,
+    IReadOnlyList<BotCommand>? Commands = null);

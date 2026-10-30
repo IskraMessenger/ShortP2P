@@ -13,6 +13,7 @@ internal sealed class BotAccountDocument
     public string CertificateFingerprintSha256 { get; set; } = "";
     public string MessagePublicKey { get; set; } = "";
     public int Version { get; set; }
+    public string CommandsJson { get; set; } = "[]";
     public DateTime CreatedAtUtc { get; set; }
 
     public BotAccount ToDomain() => new()
@@ -26,6 +27,7 @@ internal sealed class BotAccountDocument
         CertificateFingerprintSha256 = CertificateFingerprintSha256,
         MessagePublicKey = MessagePublicKey,
         Version = Version,
+        Commands = BotCommandsJson.Deserialize(CommandsJson),
         CreatedAtUtc = CreatedAtUtc
     };
 
@@ -40,6 +42,7 @@ internal sealed class BotAccountDocument
         CertificateFingerprintSha256 = account.CertificateFingerprintSha256,
         MessagePublicKey = account.MessagePublicKey,
         Version = account.Version,
+        CommandsJson = BotCommandsJson.Serialize(account.Commands),
         CreatedAtUtc = account.CreatedAtUtc
     };
 }

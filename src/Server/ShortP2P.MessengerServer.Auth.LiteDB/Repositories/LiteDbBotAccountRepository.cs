@@ -58,9 +58,10 @@ public sealed class LiteDbBotAccountRepository : IBotAccountRepository, IDisposa
         return Task.CompletedTask;
     }
 
-    public Task<bool> UpdateVersionAsync(
+    public Task<bool> UpdateReportAsync(
         string networkId,
         int version,
+        IReadOnlyList<BotCommand> commands,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -71,6 +72,7 @@ public sealed class LiteDbBotAccountRepository : IBotAccountRepository, IDisposa
                 return Task.FromResult(false);
 
             doc.Version = version;
+            doc.CommandsJson = BotCommandsJson.Serialize(commands);
             return Task.FromResult(_bots.Update(doc));
         }
     }
