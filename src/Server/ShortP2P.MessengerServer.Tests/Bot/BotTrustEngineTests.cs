@@ -129,6 +129,30 @@ public class BotTrustEngineTests
     }
 
     [Fact]
+    public async Task LowRating_DoesNotAutoRecoverAfterQuietMonths()
+    {
+        var engine = CreateEngine(out var clock);
+        await engine.EnsurePublishedAsync("bot-1");
+        for (var i = 0; i < 7; i++)
+        {
+            await engine.AddClaimAsync("bot-1", $"u{i}");
+            clock.Advance(TimeSpan.FromHours(1));
+            await engine.ProcessAsync();
+            clock.Advance(TimeSpan.FromMinutes(1));
+        }
+
+        var banned = (await engine.GetRatingAsync("bot-1"))!.Value;
+        Assert.True(banned < 0.5f);
+
+        clock.Advance(TimeSpan.FromDays(90));
+        var events = await engine.ProcessAsync();
+
+        Assert.DoesNotContain(events, e => e.Kind == BotTrustProcessEventKind.RatingIncreased);
+        Assert.Equal(banned, (await engine.GetRatingAsync("bot-1"))!.Value, precision: 3);
+        Assert.True(await engine.IsBannedAsync("bot-1"));
+    }
+
+    [Fact]
     public void AttentionPrefix_IsStable()
     {
         Assert.Equal("ATTENTION!!!", BotTrustLogPrefixes.Attention);

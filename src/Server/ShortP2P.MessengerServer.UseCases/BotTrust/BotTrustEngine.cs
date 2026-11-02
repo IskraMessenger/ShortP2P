@@ -277,6 +277,10 @@ public sealed class BotTrustEngine(IBotTrustStore store, IClock clock, BotTrustO
 
     private void ApplyGrowth(BotTrustState state, DateTime now, List<BotTrustProcessEvent> events)
     {
+        // Low trust (< 0.5) does not recover automatically — only middle/high can grow while quiet.
+        if (BotTrustRatings.IsBanned(state.Rating, _options))
+            return;
+
         var quietSince = state.LastClaimUtc ?? state.PublishedAtUtc;
         var quietFor = now - quietSince;
         if (quietFor < _options.GrowthPeriod)

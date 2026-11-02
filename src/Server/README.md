@@ -42,7 +42,7 @@ src/Server/
 ```
 
 Рейтинг чужих серверов: проект `src/ShortP2P.TrustSystem` (`AskRating` / `ClaimServer`).
-Рейтинг ботов на этом сервере: `UseCases/BotTrust` + LiteDB (`BotTrustAntifraudHostedService`, `POST /api/v1/bots/claim`); `<0.5` → 403 боту и мягкое исключение из `GET /bots`.
+Рейтинг ботов на этом сервере: `UseCases/BotTrust` + LiteDB (`BotTrustAntifraudHostedService`, `POST /api/v1/bots/claim`); `<0.5` → 403 боту и мягкое исключение из `GET /bots` (низкий рейтинг **не** восстанавливается автоматически).
 
 Все проекты входят в `ShortP2P.sln`.
 
