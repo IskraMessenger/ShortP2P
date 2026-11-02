@@ -1,6 +1,5 @@
 using ShortP2P.MessengerServer.Domain;
 using ShortP2P.MessengerServer.UseCases.Abstractions;
-using ShortP2P.MessengerServer.UseCases.BotBlacklist;
 using ShortP2P.MessengerServer.UseCases.BotTrust;
 
 namespace ShortP2P.MessengerServer.UseCases.BotClient;
@@ -10,7 +9,6 @@ public sealed class SendMessageToBotUseCase(
     IBotAccountRepository bots,
     IClientToBotMessageRepository messages,
     IClientToBotWaitService wait,
-    BotBlacklistService blacklist,
     BotTrustEngine trust)
 {
     public async Task ExecuteAsync(SendMessageToBotCommand command, CancellationToken cancellationToken = default)
@@ -22,9 +20,6 @@ public sealed class SendMessageToBotUseCase(
             ? null
             : command.CorrelationId.Trim();
         var ciphertext = command.Message.Trim();
-
-        if (await blacklist.ContainsAsync(botNetworkId, cancellationToken).ConfigureAwait(false))
-            throw UseCaseException.Forbidden("Bot is not allowed.");
 
         if (await trust.IsBannedAsync(botNetworkId, cancellationToken).ConfigureAwait(false))
             throw UseCaseException.Forbidden("Bot trust rating is too low.");

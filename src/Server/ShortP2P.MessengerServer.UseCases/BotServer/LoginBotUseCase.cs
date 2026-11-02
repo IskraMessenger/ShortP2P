@@ -1,6 +1,6 @@
 using ShortP2P.MessengerServer.Domain;
 using ShortP2P.MessengerServer.UseCases.Abstractions;
-using ShortP2P.MessengerServer.UseCases.BotBlacklist;
+using ShortP2P.MessengerServer.UseCases.BotAccess;
 using ShortP2P.MessengerServer.UseCases.BotTrust;
 
 namespace ShortP2P.MessengerServer.UseCases.BotServer;
@@ -11,7 +11,6 @@ public sealed class LoginBotUseCase(
     IPasswordHasher passwordHasher,
     IAuthTokenService tokenService,
     IServerCertificateReader serverCertificate,
-    BotBlacklistGuard blacklistGuard,
     BotTrustGuard trustGuard,
     BotTrustEngine trust,
     BotAccessLogService accessLog)
@@ -31,9 +30,6 @@ public sealed class LoginBotUseCase(
                 throw UseCaseException.Validation("version is invalid.");
             var commands = BotCommandNormalizer.Normalize(command.Commands);
 
-            await blacklistGuard
-                .EnsureAllowedAsync(command.NetworkId, BotAccessOperations.Login, cancellationToken)
-                .ConfigureAwait(false);
             await trustGuard
                 .EnsureAllowedAsync(command.NetworkId, BotAccessOperations.Login, cancellationToken)
                 .ConfigureAwait(false);

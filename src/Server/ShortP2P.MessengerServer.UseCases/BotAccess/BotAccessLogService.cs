@@ -2,7 +2,7 @@ using Microsoft.Extensions.Logging;
 using ShortP2P.MessengerServer.Domain;
 using ShortP2P.MessengerServer.UseCases.Abstractions;
 
-namespace ShortP2P.MessengerServer.UseCases.BotBlacklist;
+namespace ShortP2P.MessengerServer.UseCases.BotAccess;
 
 /// <summary>
 /// Writes <c>bot_access_log</c> entries. Forbidden (403) attempts also go to the ordinary application log.

@@ -55,7 +55,6 @@
 | `GET` | `/api/v1/bots/{networkId}/version` | Версия бота (JWT) |
 | `GET` | `/api/v1/bots/{networkId}/commands` | Команды бота (JWT) |
 | `POST` | `/api/v1/bots/claim` | Жалоба на бота (JWT); рейтинг пересчитывается antifraud hosted service в часовом окне |
-| `GET`/`POST`/`DELETE` | `/api/v1/bots/blacklist`… | Ручной blacklist ботов (JWT) |
 | `POST` | `/api/v1/bot_server_interaction/register` | Регистрация бота → выдача `BotKey` |
 | `POST` | `/api/v1/bot_server_interaction/login` | Авторизация бота по `BotKey` → JWT |
 | `POST` | `/api/v1/bot_server_interaction/remove` | Удаление бота по `networkId` + `BotKey` |

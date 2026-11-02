@@ -1,4 +1,4 @@
-using ShortP2P.MessengerServer.UseCases.BotBlacklist;
+using ShortP2P.MessengerServer.UseCases.BotAccess;
 
 namespace ShortP2P.MessengerServer.UseCases.BotTrust;
 

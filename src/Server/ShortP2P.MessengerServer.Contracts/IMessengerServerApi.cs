@@ -145,15 +145,6 @@ public interface IMessengerServerApi
         BotMessageReceiptRequest request,
         CancellationToken cancellationToken = default);
 
-    /// <summary>GET <see cref="ApiRoutes.BotBlacklist"/> — blacklisted bot network ids (JWT).</summary>
-    Task<IReadOnlyList<BotBlacklistEntryDto>> GetBotBlackListAsync(CancellationToken cancellationToken = default);
-
-    /// <summary>POST <see cref="ApiRoutes.BotBlacklist"/> — add a bot network id to the blacklist (JWT).</summary>
-    Task AddBotToBlacklistAsync(AddBotToBlacklistRequest request, CancellationToken cancellationToken = default);
-
-    /// <summary>DELETE <see cref="ApiRoutes.BotBlacklist"/>/{networkId} — remove from blacklist (JWT).</summary>
-    Task RemoveBotFromBlacklistAsync(string networkId, CancellationToken cancellationToken = default);
-
     /// <summary>
     /// POST <see cref="ApiRoutes.BotClaim"/> — complain about a registered bot (JWT).
     /// Rating changes are applied by the hourly antifraud service.

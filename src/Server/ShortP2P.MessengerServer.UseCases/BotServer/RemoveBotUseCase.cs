@@ -1,5 +1,5 @@
 using ShortP2P.MessengerServer.UseCases.Abstractions;
-using ShortP2P.MessengerServer.UseCases.BotBlacklist;
+using ShortP2P.MessengerServer.UseCases.BotAccess;
 using ShortP2P.MessengerServer.UseCases.BotTrust;
 
 namespace ShortP2P.MessengerServer.UseCases.BotServer;
@@ -10,7 +10,6 @@ public sealed class RemoveBotUseCase(
     IBotToClientMessageRepository toClient,
     IClientToBotMessageRepository toBot,
     IPasswordHasher passwordHasher,
-    BotBlacklistGuard blacklistGuard,
     BotTrustGuard trustGuard,
     BotTrustEngine trust,
     BotAccessLogService accessLog)
@@ -19,9 +18,6 @@ public sealed class RemoveBotUseCase(
     {
         try
         {
-            await blacklistGuard
-                .EnsureAllowedAsync(command.NetworkId, BotAccessOperations.Remove, cancellationToken)
-                .ConfigureAwait(false);
             await trustGuard
                 .EnsureAllowedAsync(command.NetworkId, BotAccessOperations.Remove, cancellationToken)
                 .ConfigureAwait(false);

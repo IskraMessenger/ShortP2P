@@ -1,6 +1,6 @@
 using ShortP2P.MessengerServer.Domain;
 using ShortP2P.MessengerServer.UseCases.Abstractions;
-using ShortP2P.MessengerServer.UseCases.BotBlacklist;
+using ShortP2P.MessengerServer.UseCases.BotAccess;
 using ShortP2P.MessengerServer.UseCases.BotRateLimit;
 using ShortP2P.MessengerServer.UseCases.BotTrust;
 
@@ -15,7 +15,6 @@ public sealed class DeliverBotMessagesUseCase(
     IBotToClientWaitService wait,
     IPasswordHasher passwordHasher,
     IClock clock,
-    BotBlacklistGuard blacklistGuard,
     BotTrustGuard trustGuard,
     BotRateLimitGuard rateLimitGuard)
 {
@@ -23,9 +22,6 @@ public sealed class DeliverBotMessagesUseCase(
         DeliverBotMessagesCommand command,
         CancellationToken cancellationToken = default)
     {
-        await blacklistGuard
-            .EnsureAllowedAsync(command.BotNetworkId, BotAccessOperations.SendMessages, cancellationToken)
-            .ConfigureAwait(false);
         await trustGuard
             .EnsureAllowedAsync(command.BotNetworkId, BotAccessOperations.SendMessages, cancellationToken)
             .ConfigureAwait(false);

@@ -357,20 +357,6 @@ namespace ShortP2P.MessengerServer.Persistence.Psql.Migrations
                     b.ToTable("client_to_bot_messages", (string)null);
                 });
 
-            modelBuilder.Entity("ShortP2P.MessengerServer.Persistence.Psql.Entities.BotBlacklistRecord", b =>
-                {
-                    b.Property<string>("NetworkId")
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
-                    b.Property<DateTime>("AddedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("NetworkId");
-
-                    b.ToTable("bot_blacklist", (string)null);
-                });
-
             modelBuilder.Entity("ShortP2P.MessengerServer.Persistence.Psql.Entities.BotAccessLogRecord", b =>
                 {
                     b.Property<long>("Id")
