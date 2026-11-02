@@ -292,9 +292,16 @@ public sealed class BotTrustEngine(IBotTrustStore store, IClock clock, BotTrustO
 
         var extra = months - state.GrowthMonthsApplied;
         var old = state.Rating;
-        // Quiet growth: +G per full quiet month, capped at 1.0 (starts from current rating).
-        state.Rating = BotTrustRatings.Clamp01(state.Rating + _options.StepG * extra);
-        state.GrowthMonthsApplied = months;
+        // Apply month-by-month so middle→high crosses use the matching G each month.
+        for (var i = 0; i < extra; i++)
+        {
+            if (BotTrustRatings.IsBanned(state.Rating, _options))
+                break;
+
+            var step = GrowthStepFor(state.Rating);
+            state.Rating = BotTrustRatings.Clamp01(state.Rating + step);
+            state.GrowthMonthsApplied++;
+        }
 
         if (Math.Abs(state.Rating - old) > 0.0001f)
         {
@@ -303,12 +310,17 @@ public sealed class BotTrustEngine(IBotTrustStore store, IClock clock, BotTrustO
                 BotNetworkId = state.BotNetworkId,
                 Kind = BotTrustProcessEventKind.RatingIncreased,
                 Message =
-                    $"Bot rating increased by {_options.StepG * extra:0.####} after {extra} quiet month(s): {old:0.####} → {state.Rating:0.####}.",
+                    $"Bot rating increased by {state.Rating - old:0.####} after {extra} quiet month(s): {old:0.####} → {state.Rating:0.####}.",
                 OldRating = old,
                 NewRating = state.Rating
             });
         }
     }
+
+    private float GrowthStepFor(float rating) =>
+        BotTrustRatings.Classify(rating, _options) == BotTrustLevel.Middle
+            ? _options.MiddleGrowthStepG
+            : _options.StepG;
 
     private static bool ContainsUser(BotTrustState state, string userId) =>
         state.UserNetworkIds.Any(id => string.Equals(id, userId, StringComparison.Ordinal));

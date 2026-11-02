@@ -10,8 +10,11 @@ public sealed class BotTrustOptions
 
     public float LowThreshold { get; set; } = 0.5f;
 
-    /// <summary>Penalty (and quiet growth) step G.</summary>
+    /// <summary>Penalty step G, and quiet-month growth for high-trust bots.</summary>
     public float StepG { get; set; } = 0.05f;
+
+    /// <summary>Quiet-month growth step for middle-trust bots ([0.5, 0.8)).</summary>
+    public float MiddleGrowthStepG { get; set; } = 0.025f;
 
     /// <summary>Floor for reduced G during a claim flood.</summary>
     public float MinFloodStepG { get; set; } = 0.01f;

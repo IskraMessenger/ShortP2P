@@ -96,7 +96,7 @@ public class BotTrustEngineTests
     }
 
     [Fact]
-    public async Task QuietMonth_IncreasesBy005()
+    public async Task QuietMonth_HighTrust_IncreasesBy005()
     {
         var engine = CreateEngine(out var clock);
         await engine.EnsurePublishedAsync("bot-1");
@@ -106,6 +106,28 @@ public class BotTrustEngineTests
         Assert.Contains(events, e => e.Kind == BotTrustProcessEventKind.RatingIncreased);
         Assert.Equal(0.85f, (await engine.GetRatingAsync("bot-1"))!.Value, precision: 3);
         Assert.Equal(BotTrustLevel.High, BotTrustRatings.Classify((await engine.GetRatingAsync("bot-1"))!.Value));
+    }
+
+    [Fact]
+    public async Task QuietMonth_MiddleTrust_IncreasesBy0025()
+    {
+        var engine = CreateEngine(out var clock);
+        await engine.EnsurePublishedAsync("bot-1");
+        // One unique claim → 0.75 (middle), with enough users to avoid flood.
+        for (var i = 0; i < 20; i++)
+            await engine.RememberUserAsync("bot-1", $"user{i}");
+        await engine.AddClaimAsync("bot-1", "user0");
+        clock.Advance(TimeSpan.FromHours(1));
+        await engine.ProcessAsync();
+        Assert.Equal(0.75f, (await engine.GetRatingAsync("bot-1"))!.Value, precision: 3);
+        Assert.Equal(BotTrustLevel.Middle, BotTrustRatings.Classify((await engine.GetRatingAsync("bot-1"))!.Value));
+
+        clock.Advance(TimeSpan.FromDays(30));
+        var events = await engine.ProcessAsync();
+
+        Assert.Contains(events, e => e.Kind == BotTrustProcessEventKind.RatingIncreased);
+        Assert.Equal(0.775f, (await engine.GetRatingAsync("bot-1"))!.Value, precision: 3);
+        Assert.Equal(BotTrustLevel.Middle, BotTrustRatings.Classify((await engine.GetRatingAsync("bot-1"))!.Value));
     }
 
     [Fact]
