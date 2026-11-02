@@ -15,11 +15,13 @@ public sealed class BotTrustAntifraudHostedService(
     IOptions<BotTrustOptions> options,
     ILogger<BotTrustAntifraudHostedService> logger) : BackgroundService
 {
+    private static readonly TimeSpan MinAntifraudPollInterval = TimeSpan.FromMinutes(5);
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var interval = options.Value.AntifraudPollInterval;
-        if (interval < TimeSpan.FromSeconds(5))
-            interval = TimeSpan.FromSeconds(5);
+        if (interval < MinAntifraudPollInterval)
+            interval = MinAntifraudPollInterval;
 
         while (!stoppingToken.IsCancellationRequested)
         {

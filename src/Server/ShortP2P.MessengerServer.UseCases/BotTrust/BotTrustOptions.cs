@@ -30,5 +30,5 @@ public sealed class BotTrustOptions
     /// <summary>Quiet period after publication (or last claim) before monthly growth starts.</summary>
     public TimeSpan GrowthPeriod { get; set; } = TimeSpan.FromDays(30);
 
-    public TimeSpan AntifraudPollInterval { get; set; } = TimeSpan.FromMinutes(1);
+    public TimeSpan AntifraudPollInterval { get; set; } = TimeSpan.FromMinutes(5);
 }
