@@ -48,6 +48,9 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
     /// <summary>SHO-10: peer network id → messenger server id chosen after UDP establish failed.</summary>
     private readonly ConcurrentDictionary<string, int> _preferredServerByPeer = new(StringComparer.Ordinal);
 
+    /// <summary>Base URLs that answered 404 on bot routes. Bot downloads must not ask them.</summary>
+    private readonly ConcurrentDictionary<string, byte> _serversWithoutBotApi = new(StringComparer.OrdinalIgnoreCase);
+
     private CancellationTokenSource? _cts;
     private Task? _longPollLoop;
     private Task? _botPollLoop;
@@ -1179,11 +1182,11 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
         CancellationToken cancellationToken = default)
     {
         Require.NotNullOrWhiteSpace(blobId);
-        if (totalChunks < 1)
-            return null;
 
         var ready = await _manager.EnsureAllActiveReadyAsync(cancellationToken).ConfigureAwait(false);
-        var ordered = OrderConnectionsForBlobDownload(ready, preferredBaseUrl);
+        var ordered = OrderConnectionsForBlobDownload(ready, preferredBaseUrl)
+            .Where(SupportsBotApi)
+            .ToArray();
         foreach (var conn in ordered)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -1192,22 +1195,36 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
 
             try
             {
-                var manifest = await TrackAsync(
+                var manifest = await CallDownloadAsync(
                         conn,
-                        () => conn.Api.GetBlobChunkManifestAsync(blobId, cancellationToken))
+                        ct => conn.Api.GetBlobChunkManifestAsync(blobId, ct),
+                        cancellationToken)
                     .ConfigureAwait(false);
-                if (manifest.TotalChunks != totalChunks || manifest.Indexes == null)
+                var expected = totalChunks >= 1 ? totalChunks : manifest.TotalChunks;
+                if (expected < 1 || manifest.TotalChunks != expected || manifest.Indexes == null ||
+                    manifest.Indexes.Length < expected)
+                {
+                    _logger.LogDebug(
+                        "Bot blob {BlobId} on {BaseUrl} has {Actual} chunk(s), expected {Expected}",
+                        blobId,
+                        conn.Entity.BaseUrl,
+                        manifest.TotalChunks,
+                        expected);
                     continue;
+                }
 
-                var parts = new byte[totalChunks][];
+                var parts = new byte[expected][];
                 var complete = true;
-                for (var i = 0; i < totalChunks; i++)
+                for (var i = 0; i < expected; i++)
                 {
                     var index = i;
                     try
                     {
                         parts[i] = await BotChunkRetry.RunAsync(
-                                ct => TrackAsync(conn, () => conn.Api.GetBlobChunkAsync(blobId, index, ct)),
+                                ct => CallDownloadAsync(
+                                    conn,
+                                    token => conn.Api.GetBlobChunkAsync(blobId, index, token),
+                                    ct),
                                 ex => ex is not MessengerServerApiException api || (int)api.StatusCode != 404,
                                 cancellationToken: cancellationToken)
                             .ConfigureAwait(false);
@@ -1259,7 +1276,9 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
     {
         Require.NotNullOrWhiteSpace(messageId);
         var ready = await _manager.EnsureAllActiveReadyAsync(cancellationToken).ConfigureAwait(false);
-        var ordered = OrderConnectionsForBlobDownload(ready, preferredBaseUrl);
+        var ordered = OrderConnectionsForBlobDownload(ready, preferredBaseUrl)
+            .Where(SupportsBotApi)
+            .ToArray();
         foreach (var conn in ordered)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -1267,21 +1286,27 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
                 continue;
             try
             {
-                await TrackAsync(
+                await CallDownloadAsync(
                         conn,
-                        () => conn.Api.SubmitBotMessageReceiptAsync(
-                            new BotMessageReceiptRequest
-                            {
-                                MessageId = messageId.Trim(),
-                                ReceivedAtUtc = DateTime.UtcNow
-                            },
-                            cancellationToken))
+                        async ct =>
+                        {
+                            await conn.Api.SubmitBotMessageReceiptAsync(
+                                    new BotMessageReceiptRequest
+                                    {
+                                        MessageId = messageId.Trim(),
+                                        ReceivedAtUtc = DateTime.UtcNow
+                                    },
+                                    ct)
+                                .ConfigureAwait(false);
+                            return true;
+                        },
+                        cancellationToken)
                     .ConfigureAwait(false);
                 return;
             }
             catch (MessengerServerApiException ex) when ((int)ex.StatusCode == 404)
             {
-                return;
+                continue;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -1297,12 +1322,15 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
     public async Task<byte[]?> TryDownloadBlobAsync(
         string blobId,
         string? preferredBaseUrl,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool botServersOnly = false)
     {
         Require.NotNullOrWhiteSpace(blobId);
 
         var ready = await _manager.EnsureAllActiveReadyAsync(cancellationToken).ConfigureAwait(false);
         var ordered = OrderConnectionsForBlobDownload(ready, preferredBaseUrl);
+        if (botServersOnly)
+            ordered = ordered.Where(SupportsBotApi).ToList();
         if (ordered.Count == 0)
             return null;
 
@@ -1314,7 +1342,10 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
 
             try
             {
-                var bytes = await TrackAsync(conn, () => conn.Api.GetBlobAsync(blobId, cancellationToken))
+                var bytes = await CallDownloadAsync(
+                        conn,
+                        ct => conn.Api.GetBlobAsync(blobId, ct),
+                        cancellationToken)
                     .ConfigureAwait(false);
                 if (bytes is { Length: > 0 })
                     return bytes;
@@ -1513,6 +1544,13 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
             {
                 // Not TrackAsync: a missing /bots on an older server must not count as a trust failure.
                 list = await conn.Api.GetBotsAsync(cancellationToken).ConfigureAwait(false);
+                MarkBotApiAvailable(conn.Entity.BaseUrl);
+            }
+            catch (MessengerServerApiException ex) when ((int)ex.StatusCode == 404)
+            {
+                if (MarkBotApiUnavailable(conn.Entity.BaseUrl))
+                    _logger.LogDebug("GetBots is not available on {BaseUrl}", conn.Entity.BaseUrl);
+                continue;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -1759,33 +1797,49 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
         UserEntity user,
         CancellationToken cancellationToken)
     {
+        // Unacked attachment offers stay in the inbox until the file is downloaded.
+        // The server returns that set immediately, so an unchanged inbox must wait
+        // instead of spinning decrypt + SQLite and starving the download.
+        var heldBackoff = TimeSpan.FromSeconds(2);
         while (!cancellationToken.IsCancellationRequested)
         {
             if (!_manager.AllowsTraffic(connection))
                 break;
 
+            BotWaitForMessagesResponse inbox;
             try
             {
-                var inbox = await TrackAsync(
-                        connection,
-                        () => connection.LongPollApi.WaitForBotMessagesAsync(
+                try
+                {
+                    // Not TrackAsync on 404: an older server without bot routes must not
+                    // accumulate consecutive failures and drop out of the trusted set.
+                    inbox = await connection.LongPollApi.WaitForBotMessagesAsync(
                             new BotWaitForMessagesRequest
                             {
                                 NetworkId = user.NetworkIdShort.Trim(),
                                 TimeoutSeconds = LongPollTimeoutSeconds
                             },
-                            cancellationToken))
-                    .ConfigureAwait(false);
-
-                if (inbox.Messages is { Count: > 0 })
-                {
-                    _logger.LogDebug(
-                        "Bot wait_for_messages: {Count} message(s) on {BaseUrl}",
-                        inbox.Messages.Count,
-                        connection.Entity.BaseUrl);
-                    await ProcessIncomingBotMessagesAsync(connection, user, inbox.Messages, cancellationToken)
+                            cancellationToken)
                         .ConfigureAwait(false);
                 }
+                catch (MessengerServerApiException ex) when ((int)ex.StatusCode == 404)
+                {
+                    if (MarkBotApiUnavailable(connection.Entity.BaseUrl))
+                    {
+                        _logger.LogDebug(
+                            "Bot wait_for_messages is not available on {BaseUrl} (404)",
+                            connection.Entity.BaseUrl);
+                    }
+
+                    await Task.Delay(TimeSpan.FromSeconds(60), cancellationToken).ConfigureAwait(false);
+                    continue;
+                }
+
+                if (!_manager.AllowsTraffic(connection))
+                    break;
+
+                _manager.RecordRequestSuccess(connection.Entity.Id);
+                MarkBotApiAvailable(connection.Entity.BaseUrl);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -1793,7 +1847,56 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
+                _manager.RecordRequestFailure(connection.Entity.Id);
                 _logger.LogError(ex, "Bot wait_for_messages failed on {BaseUrl}", connection.Entity.BaseUrl);
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+
+                continue;
+            }
+
+            try
+            {
+                if (inbox.Messages is { Count: > 0 })
+                {
+                    _logger.LogDebug(
+                        "Bot wait_for_messages: {Count} message(s) on {BaseUrl}",
+                        inbox.Messages.Count,
+                        connection.Entity.BaseUrl);
+                    var madeProgress = await ProcessIncomingBotMessagesAsync(
+                            connection, user, inbox.Messages, cancellationToken)
+                        .ConfigureAwait(false);
+                    if (!madeProgress)
+                    {
+                        _logger.LogDebug(
+                            "Bot inbox on {BaseUrl} still has {Count} stored message(s); backing off {DelaySeconds:0}s",
+                            connection.Entity.BaseUrl,
+                            inbox.Messages.Count,
+                            heldBackoff.TotalSeconds);
+                        await Task.Delay(heldBackoff, cancellationToken).ConfigureAwait(false);
+                        var doubled = TimeSpan.FromTicks(heldBackoff.Ticks * 2);
+                        heldBackoff = doubled > TimeSpan.FromSeconds(5)
+                            ? TimeSpan.FromSeconds(5)
+                            : doubled;
+                        continue;
+                    }
+                }
+
+                heldBackoff = TimeSpan.FromSeconds(2);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogError(ex, "Bot inbox processing failed on {BaseUrl}", connection.Entity.BaseUrl);
                 try
                 {
                     await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken).ConfigureAwait(false);
@@ -1806,15 +1909,17 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
         }
     }
 
-    private async Task ProcessIncomingBotMessagesAsync(
+    /// <returns>True when a message was stored for the first time or a receipt was accepted.</returns>
+    private async Task<bool> ProcessIncomingBotMessagesAsync(
         MessengerServerConnection connection,
         UserEntity user,
         IReadOnlyList<BotClientInboundMessageDto> messages,
         CancellationToken cancellationToken)
     {
         if (!_manager.AllowsTraffic(connection) || messages.Count == 0)
-            return;
+            return false;
 
+        var madeProgress = false;
         var privateKey = _auth.GetCurrentPrivateKey();
         foreach (var message in messages)
         {
@@ -1868,11 +1973,12 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
                     await PersistIncomingServerWireAsync(
                             chat, wire, blocked, connection.Entity.BaseUrl, cancellationToken)
                         .ConfigureAwait(false);
+                    madeProgress = true;
                     _logger.LogDebug(
                         "Persisted bot message {MessageId} chat={ChatId} wireLen={WireLen} blocked={Blocked}",
                         messageId, chat.Id, wire.Length, blocked);
                 }
-                else
+                else if (!deferReceipt)
                 {
                     _logger.LogDebug(
                         "Duplicate bot message {MessageId} — skip ingest, still ack",
@@ -1885,7 +1991,8 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
             }
 
             // Ack on every server that delivered a copy, even if we already ingested it once.
-            // Chunked attachments stay on the server until the file itself has been assembled.
+            // Chunked attachments stay on the server until the file itself has been downloaded:
+            // a receipt deletes the ciphertext chunks.
             if (deferReceipt)
                 continue;
 
@@ -1898,6 +2005,7 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
                         ReceivedAtUtc = DateTime.UtcNow
                     },
                     cancellationToken)).ConfigureAwait(false);
+                madeProgress = true;
                 _logger.LogDebug("Bot message receipt OK for {MessageId}", messageId);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -1905,6 +2013,8 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
                 _logger.LogError(ex, "Bot message receipt failed for {MessageId}", messageId);
             }
         }
+
+        return madeProgress;
     }
 
     private async Task LongPollServerLoopAsync(
@@ -2502,6 +2612,54 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
             chat.Id, chat.IsBot, wire.Length);
         await IngestWireIntoRepositoryAsync(chat.Id, wire, blobServerBaseUrl).ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// Download GET. A 404 means the blob is absent or the route is missing, not that the server is down.
+    /// </summary>
+    private async Task<T> CallDownloadAsync<T>(
+        MessengerServerConnection connection,
+        Func<CancellationToken, Task<T>> action,
+        CancellationToken cancellationToken)
+    {
+        if (!_manager.AllowsTraffic(connection))
+            throw new InvalidOperationException("Messenger server is not trusted.");
+
+        try
+        {
+            var result = await action(cancellationToken).ConfigureAwait(false);
+            _manager.RecordRequestSuccess(connection.Entity.Id);
+            return result;
+        }
+        catch (MessengerServerApiException ex) when ((int)ex.StatusCode == 404)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _manager.RecordRequestFailure(connection.Entity.Id);
+            throw;
+        }
+    }
+
+    private bool MarkBotApiUnavailable(string? baseUrl)
+    {
+        var key = SqliteMessengerServerRepository.NormalizeBaseUrl(baseUrl ?? "");
+        if (key.Length == 0)
+            return false;
+        return _serversWithoutBotApi.TryAdd(key, 0);
+    }
+
+    private void MarkBotApiAvailable(string? baseUrl)
+    {
+        var key = SqliteMessengerServerRepository.NormalizeBaseUrl(baseUrl ?? "");
+        if (key.Length == 0)
+            return;
+        _serversWithoutBotApi.TryRemove(key, out _);
+    }
+
+    private bool SupportsBotApi(MessengerServerConnection connection) =>
+        !_serversWithoutBotApi.ContainsKey(
+            SqliteMessengerServerRepository.NormalizeBaseUrl(connection.Entity.BaseUrl));
 
     private async Task TrackAsync(MessengerServerConnection connection, Func<Task> action)
     {
