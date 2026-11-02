@@ -153,4 +153,10 @@ public interface IMessengerServerApi
 
     /// <summary>DELETE <see cref="ApiRoutes.BotBlacklist"/>/{networkId} — remove from blacklist (JWT).</summary>
     Task RemoveBotFromBlacklistAsync(string networkId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// POST <see cref="ApiRoutes.BotClaim"/> — complain about a registered bot (JWT).
+    /// Rating changes are applied by the hourly antifraud service.
+    /// </summary>
+    Task ClaimBotAsync(ClaimBotRequest request, CancellationToken cancellationToken = default);
 }

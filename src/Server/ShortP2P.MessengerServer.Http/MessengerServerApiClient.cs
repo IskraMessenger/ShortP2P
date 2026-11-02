@@ -450,6 +450,19 @@ public sealed class MessengerServerApiClient(
         await MessengerServerJson.EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task ClaimBotAsync(
+        ClaimBotRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        Require.NotNull(request);
+
+        using var response = await httpClient
+            .PostAsync(ApiRoutes.BotClaim, MessengerServerJson.ToJsonContent(request), cancellationToken)
+            .ConfigureAwait(false);
+
+        await MessengerServerJson.EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
+    }
+
     /// <summary>Clears the stored JWT (logout / switch account).</summary>
     public void Logout() => session.Clear();
 }

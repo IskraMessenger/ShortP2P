@@ -1,6 +1,9 @@
+using ShortP2P.MessengerServer.Api.Persistence.InMemory;
 using ShortP2P.MessengerServer.Domain;
+using ShortP2P.MessengerServer.Tests.Fakes;
 using ShortP2P.MessengerServer.UseCases.Abstractions;
 using ShortP2P.MessengerServer.UseCases.BotCatalog;
+using ShortP2P.MessengerServer.UseCases.BotTrust;
 
 namespace ShortP2P.MessengerServer.Tests.Bot;
 
@@ -14,7 +17,11 @@ public class ListBotsUseCaseTests
         await repo.AddAsync(Sample("net-a", "alpha", "Alpha", "first"));
         await repo.AddAsync(Sample("  ", "skip", "Skip", "no id"));
 
-        var list = await new ListBotsUseCase(repo).ExecuteAsync();
+        var trust = new BotTrustEngine(
+            new InMemoryBotTrustStore(),
+            new FakeClock(new DateTime(2026, 10, 18, 0, 0, 0, DateTimeKind.Utc)),
+            new BotTrustOptions());
+        var list = await new ListBotsUseCase(repo, trust).ExecuteAsync();
 
         Assert.Equal(["net-a", "net-z"], list.Select(b => b.NetworkId).ToArray());
         Assert.Equal("Alpha", list[0].BotReadableName);

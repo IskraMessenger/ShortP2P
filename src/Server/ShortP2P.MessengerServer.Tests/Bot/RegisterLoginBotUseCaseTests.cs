@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging.Abstractions;
+using ShortP2P.MessengerServer.Api.Persistence.InMemory;
 using ShortP2P.MessengerServer.Contracts;
 using ShortP2P.MessengerServer.Domain;
 using ShortP2P.MessengerServer.Infrastructure.Caching;
@@ -8,6 +9,7 @@ using ShortP2P.MessengerServer.UseCases.Abstractions;
 using ShortP2P.MessengerServer.UseCases.BotBlacklist;
 using ShortP2P.MessengerServer.UseCases.BotCatalog;
 using ShortP2P.MessengerServer.UseCases.BotServer;
+using ShortP2P.MessengerServer.UseCases.BotTrust;
 
 namespace ShortP2P.MessengerServer.Tests.Bot;
 
@@ -160,6 +162,8 @@ public class RegisterLoginBotUseCaseTests
         };
 
         private readonly BotBlacklistGuard _blacklistGuard;
+        private readonly BotTrustGuard _trustGuard;
+        private readonly BotTrustEngine _trust;
         private readonly BotAccessLogService _accessLog;
 
         public Harness()
@@ -177,6 +181,11 @@ public class RegisterLoginBotUseCaseTests
                 clock,
                 NullLogger<BotAccessLogService>.Instance);
             _blacklistGuard = new BotBlacklistGuard(blacklist, _accessLog);
+            _trust = new BotTrustEngine(
+                new InMemoryBotTrustStore(),
+                clock,
+                new BotTrustOptions());
+            _trustGuard = new BotTrustGuard(_trust, _accessLog);
         }
 
         public RegisterBotUseCase Register() =>
@@ -187,10 +196,12 @@ public class RegisterLoginBotUseCaseTests
                 Clock,
                 ServerCert,
                 _blacklistGuard,
+                _trustGuard,
+                _trust,
                 _accessLog);
 
         public LoginBotUseCase Login() =>
-            new(Bots, Hasher, Tokens, ServerCert, _blacklistGuard, _accessLog);
+            new(Bots, Hasher, Tokens, ServerCert, _blacklistGuard, _trustGuard, _trust, _accessLog);
     }
 
     private sealed class FixedBotKeyGenerator(string key) : IBotKeyGenerator

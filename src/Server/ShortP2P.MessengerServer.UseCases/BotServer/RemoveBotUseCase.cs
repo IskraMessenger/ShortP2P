@@ -1,5 +1,6 @@
 using ShortP2P.MessengerServer.UseCases.Abstractions;
 using ShortP2P.MessengerServer.UseCases.BotBlacklist;
+using ShortP2P.MessengerServer.UseCases.BotTrust;
 
 namespace ShortP2P.MessengerServer.UseCases.BotServer;
 
@@ -10,6 +11,8 @@ public sealed class RemoveBotUseCase(
     IClientToBotMessageRepository toBot,
     IPasswordHasher passwordHasher,
     BotBlacklistGuard blacklistGuard,
+    BotTrustGuard trustGuard,
+    BotTrustEngine trust,
     BotAccessLogService accessLog)
 {
     public async Task ExecuteAsync(RemoveBotCommand command, CancellationToken cancellationToken = default)
@@ -17,6 +20,9 @@ public sealed class RemoveBotUseCase(
         try
         {
             await blacklistGuard
+                .EnsureAllowedAsync(command.NetworkId, BotAccessOperations.Remove, cancellationToken)
+                .ConfigureAwait(false);
+            await trustGuard
                 .EnsureAllowedAsync(command.NetworkId, BotAccessOperations.Remove, cancellationToken)
                 .ConfigureAwait(false);
 
@@ -32,6 +38,7 @@ public sealed class RemoveBotUseCase(
             await accounts.RemoveAsync(account.NetworkId, cancellationToken).ConfigureAwait(false);
             await toClient.RemoveForBotAsync(account.NetworkId, cancellationToken).ConfigureAwait(false);
             await toBot.RemoveForBotAsync(account.NetworkId, cancellationToken).ConfigureAwait(false);
+            await trust.RemoveAsync(account.NetworkId, cancellationToken).ConfigureAwait(false);
 
             await accessLog
                 .WriteAsync(

@@ -2,6 +2,7 @@ using Microsoft.Extensions.Options;
 using ShortP2P.MessengerServer.Domain;
 using ShortP2P.MessengerServer.UseCases.Abstractions;
 using ShortP2P.MessengerServer.UseCases.BotBlacklist;
+using ShortP2P.MessengerServer.UseCases.BotTrust;
 
 namespace ShortP2P.MessengerServer.UseCases.BotClient;
 
@@ -11,7 +12,8 @@ public sealed class WaitForBotMessagesUseCase(
     IBotToClientWaitService wait,
     IOptions<MessengerInboxOptions> inboxOptions,
     IClock clock,
-    BotBlacklistService blacklist)
+    BotBlacklistService blacklist,
+    BotTrustEngine trust)
 {
     public async Task<IReadOnlyList<BotToClientMessage>> ExecuteAsync(
         WaitForBotMessagesQuery query,
@@ -44,7 +46,8 @@ public sealed class WaitForBotMessagesUseCase(
             if (message.CreatedUtc < cutoff)
                 continue;
 
-            if (await blacklist.ContainsAsync(message.BotNetworkId, cancellationToken).ConfigureAwait(false))
+            if (await blacklist.ContainsAsync(message.BotNetworkId, cancellationToken).ConfigureAwait(false)
+                || await trust.IsBannedAsync(message.BotNetworkId, cancellationToken).ConfigureAwait(false))
             {
                 await messages.RemoveAsync(message.MessageId, cancellationToken).ConfigureAwait(false);
                 continue;

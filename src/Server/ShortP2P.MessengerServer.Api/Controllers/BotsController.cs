@@ -8,6 +8,7 @@ using ShortP2P.MessengerServer.Contracts.Dtos;
 using ShortP2P.MessengerServer.UseCases;
 using ShortP2P.MessengerServer.UseCases.BotBlacklist;
 using ShortP2P.MessengerServer.UseCases.BotCatalog;
+using ShortP2P.MessengerServer.UseCases.BotTrust;
 
 namespace ShortP2P.MessengerServer.Api.Controllers;
 
@@ -21,7 +22,8 @@ public sealed class BotsController(
     RemoveBotFromBlacklistUseCase removeBotFromBlacklist,
     ListBotsUseCase listBots,
     GetBotVersionUseCase getBotVersion,
-    GetBotCommandsUseCase getBotCommands) : ControllerBase
+    GetBotCommandsUseCase getBotCommands,
+    ClaimBotUseCase claimBot) : ControllerBase
 {
     /// <summary>Registered bots for selection (authorized clients, no secrets).</summary>
     [HttpGet]
@@ -145,6 +147,28 @@ public sealed class BotsController(
                 .ExecuteAsync(new RemoveBotFromBlacklistCommand(networkId.Trim()), cancellationToken)
                 .ConfigureAwait(false);
             return NoContent();
+        }
+        catch (UseCaseException ex)
+        {
+            return this.ToApiErrorResult(ex);
+        }
+    }
+
+    /// <summary>
+    /// File a claim against a registered bot. Rating is adjusted later by the hourly antifraud service.
+    /// </summary>
+    [HttpPost("claim")]
+    public async Task<IActionResult> ClaimBotAsync(
+        [FromBody] ClaimBotRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var caller = HttpContext.RequireNetworkId();
+            await claimBot
+                .ExecuteAsync(new ClaimBotCommand(caller, request.BotNetworkId), cancellationToken)
+                .ConfigureAwait(false);
+            return StatusCode(StatusCodes.Status202Accepted);
         }
         catch (UseCaseException ex)
         {

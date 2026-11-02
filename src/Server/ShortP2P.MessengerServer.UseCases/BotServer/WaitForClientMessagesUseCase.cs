@@ -2,6 +2,7 @@ using Microsoft.Extensions.Options;
 using ShortP2P.MessengerServer.Domain;
 using ShortP2P.MessengerServer.UseCases.Abstractions;
 using ShortP2P.MessengerServer.UseCases.BotBlacklist;
+using ShortP2P.MessengerServer.UseCases.BotTrust;
 
 namespace ShortP2P.MessengerServer.UseCases.BotServer;
 
@@ -17,13 +18,17 @@ public sealed class WaitForClientMessagesUseCase(
     IOptions<MessengerInboxOptions> inboxOptions,
     IPasswordHasher passwordHasher,
     IClock clock,
-    BotBlacklistGuard blacklistGuard)
+    BotBlacklistGuard blacklistGuard,
+    BotTrustGuard trustGuard)
 {
     public async Task<IReadOnlyList<ClientToBotMessage>> ExecuteAsync(
         WaitForClientMessagesQuery query,
         CancellationToken cancellationToken = default)
     {
         await blacklistGuard
+            .EnsureAllowedAsync(query.BotNetworkId, BotAccessOperations.WaitForIncomeMessages, cancellationToken)
+            .ConfigureAwait(false);
+        await trustGuard
             .EnsureAllowedAsync(query.BotNetworkId, BotAccessOperations.WaitForIncomeMessages, cancellationToken)
             .ConfigureAwait(false);
 

@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Options;
+using ShortP2P.MessengerServer.Api.Persistence.InMemory;
 using ShortP2P.MessengerServer.Domain;
 using ShortP2P.MessengerServer.Infrastructure.Caching;
 using ShortP2P.MessengerServer.Tests.Fakes;
@@ -6,6 +7,7 @@ using ShortP2P.MessengerServer.UseCases;
 using ShortP2P.MessengerServer.UseCases.Abstractions;
 using ShortP2P.MessengerServer.UseCases.BotBlacklist;
 using ShortP2P.MessengerServer.UseCases.BotClient;
+using ShortP2P.MessengerServer.UseCases.BotTrust;
 using ShortP2P.MessengerServer.UseCases.Hosting;
 
 namespace ShortP2P.MessengerServer.Tests.Bot;
@@ -159,6 +161,7 @@ public class BotClientInteractionUseCaseTests
         public ClientToBotWaitService BotWait { get; } = new();
         public FakeClock Clock { get; } = new(T0);
         public BotBlacklistService Blacklist { get; }
+        public BotTrustEngine Trust { get; }
 
         public Harness()
         {
@@ -169,6 +172,7 @@ public class BotClientInteractionUseCaseTests
                 cache,
                 new MessengerCacheOptions { CacheEnabled = true, RepositoryEnabled = true },
                 Clock);
+            Trust = new BotTrustEngine(new InMemoryBotTrustStore(), Clock, new BotTrustOptions());
         }
 
         public WaitForBotMessagesUseCase Wait() =>
@@ -177,11 +181,12 @@ public class BotClientInteractionUseCaseTests
                 ClientWait,
                 Options.Create(new MessengerInboxOptions { MaxPollTimeoutSeconds = 30 }),
                 Clock,
-                Blacklist);
+                Blacklist,
+                Trust);
 
         public AcknowledgeBotMessageUseCase Ack() => new(ToClient, new EmptyBlobChunks());
 
-        public SendMessageToBotUseCase Send() => new(Bots, ToBot, BotWait, Blacklist);
+        public SendMessageToBotUseCase Send() => new(Bots, ToBot, BotWait, Blacklist, Trust);
     }
 
     private sealed class MemoryBotBlacklistRepo : IBotBlacklistRepository

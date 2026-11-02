@@ -1,6 +1,7 @@
 using ShortP2P.MessengerServer.UseCases.Abstractions;
 using ShortP2P.MessengerServer.UseCases.Blobs;
 using ShortP2P.MessengerServer.UseCases.BotBlacklist;
+using ShortP2P.MessengerServer.UseCases.BotTrust;
 
 namespace ShortP2P.MessengerServer.UseCases.BotServer;
 
@@ -13,7 +14,8 @@ public sealed class AcknowledgeClientMessageUseCase(
     IClientToBotMessageRepository messages,
     IBlobChunkRepository chunks,
     IPasswordHasher passwordHasher,
-    BotBlacklistGuard blacklistGuard)
+    BotBlacklistGuard blacklistGuard,
+    BotTrustGuard trustGuard)
 {
     public async Task ExecuteAsync(
         AcknowledgeClientMessageCommand command,
@@ -22,6 +24,9 @@ public sealed class AcknowledgeClientMessageUseCase(
         ArgumentNullException.ThrowIfNull(command);
 
         await blacklistGuard
+            .EnsureAllowedAsync(command.BotNetworkId, BotAccessOperations.Receipts, cancellationToken)
+            .ConfigureAwait(false);
+        await trustGuard
             .EnsureAllowedAsync(command.BotNetworkId, BotAccessOperations.Receipts, cancellationToken)
             .ConfigureAwait(false);
 

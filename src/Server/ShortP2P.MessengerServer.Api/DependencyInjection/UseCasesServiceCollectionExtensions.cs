@@ -8,6 +8,7 @@ using ShortP2P.MessengerServer.UseCases.BotCatalog;
 using ShortP2P.MessengerServer.UseCases.BotClient;
 using ShortP2P.MessengerServer.UseCases.BotRateLimit;
 using ShortP2P.MessengerServer.UseCases.BotServer;
+using ShortP2P.MessengerServer.UseCases.BotTrust;
 using ShortP2P.MessengerServer.UseCases.Blobs;
 using ShortP2P.MessengerServer.UseCases.Chats;
 using ShortP2P.MessengerServer.UseCases.Forwards;
@@ -55,6 +56,7 @@ public static class UseCasesServiceCollectionExtensions
         services.AddScoped<BotBlacklistService>();
         services.AddScoped<BotAccessLogService>();
         services.AddScoped<BotBlacklistGuard>();
+        services.AddScoped<BotTrustGuard>();
         services.AddScoped<BotRateLimitGuard>();
         services.AddScoped<RegisterBotUseCase>();
         services.AddScoped<LoginBotUseCase>();
@@ -71,6 +73,7 @@ public static class UseCasesServiceCollectionExtensions
         services.AddScoped<GetBotCommandsUseCase>();
         services.AddScoped<AddBotToBlacklistUseCase>();
         services.AddScoped<RemoveBotFromBlacklistUseCase>();
+        services.AddScoped<ClaimBotUseCase>();
         services.AddScoped<GetClientPresencesUseCase>();
         services.AddScoped<GetServerCertificateUseCase>();
         services.AddScoped<AskRatingUseCase>();
@@ -80,6 +83,7 @@ public static class UseCasesServiceCollectionExtensions
         services.AddHostedService<BotRpmMetricsHostedService>();
         services.AddHostedService<MessageRetentionHostedService>();
         services.AddHostedService<TrustRecoveryHostedService>();
+        services.AddHostedService<BotTrustAntifraudHostedService>();
         services.AddHostedService<HostPowersMeasurementHostedService>();
         return services;
     }
