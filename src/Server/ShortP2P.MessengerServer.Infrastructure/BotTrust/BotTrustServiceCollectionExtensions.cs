@@ -11,7 +11,6 @@ public static class BotTrustServiceCollectionExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        services.Configure<BotTrustOptions>(configuration.GetSection(BotTrustOptions.Section));
         services.Configure<BotTrustLiteDbOptions>(configuration.GetSection(BotTrustLiteDbOptions.Section));
 
         var lite = new BotTrustLiteDbOptions();
@@ -21,14 +20,9 @@ public static class BotTrustServiceCollectionExtensions
 
         services.AddSingleton<IBotTrustStore, LiteDbBotTrustStore>();
         services.AddSingleton(sp =>
-        {
-            var options = new BotTrustOptions();
-            configuration.GetSection(BotTrustOptions.Section).Bind(options);
-            return new BotTrustEngine(
+            new BotTrustEngine(
                 sp.GetRequiredService<IBotTrustStore>(),
-                sp.GetRequiredService<IClock>(),
-                options);
-        });
+                sp.GetRequiredService<IClock>()));
         return services;
     }
 }

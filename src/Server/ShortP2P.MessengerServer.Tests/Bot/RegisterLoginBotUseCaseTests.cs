@@ -172,10 +172,7 @@ public class RegisterLoginBotUseCaseTests
                 new EmptyAccessLogRepo(),
                 clock,
                 NullLogger<BotAccessLogService>.Instance);
-            _trust = new BotTrustEngine(
-                new InMemoryBotTrustStore(),
-                clock,
-                new BotTrustOptions());
+            _trust = new BotTrustEngine(new InMemoryBotTrustStore(), clock);
             _trustGuard = new BotTrustGuard(_trust, _accessLog);
         }
 

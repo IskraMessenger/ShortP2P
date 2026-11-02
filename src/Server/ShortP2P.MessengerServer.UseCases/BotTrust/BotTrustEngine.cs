@@ -6,12 +6,12 @@ namespace ShortP2P.MessengerServer.UseCases.BotTrust;
 /// <summary>
 /// Bot trust scores on this messenger server.
 /// Claims are ingested immediately; rating changes are applied by the antifraud window processor.
+/// Rating coefficients live in <see cref="BotTrustRatings"/> (not configurable).
 /// </summary>
-public sealed class BotTrustEngine(IBotTrustStore store, IClock clock, BotTrustOptions options)
+public sealed class BotTrustEngine(IBotTrustStore store, IClock clock)
 {
     private readonly IBotTrustStore _store = store ?? throw new ArgumentNullException(nameof(store));
     private readonly IClock _clock = clock ?? throw new ArgumentNullException(nameof(clock));
-    private readonly BotTrustOptions _options = options ?? throw new ArgumentNullException(nameof(options));
     private readonly SemaphoreSlim _gate = new(1, 1);
 
     /// <summary>
@@ -33,7 +33,7 @@ public sealed class BotTrustEngine(IBotTrustStore store, IClock clock, BotTrustO
             var created = new BotTrustState
             {
                 BotNetworkId = id,
-                Rating = BotTrustRatings.Clamp01(_options.DefaultRating),
+                Rating = BotTrustRatings.Clamp01(BotTrustRatings.Default),
                 PublishedAtUtc = DateTime.SpecifyKind(publishedAtUtc ?? _clock.UtcNow, DateTimeKind.Utc)
             };
             await _store.UpsertAsync(created, cancellationToken).ConfigureAwait(false);
@@ -78,7 +78,7 @@ public sealed class BotTrustEngine(IBotTrustStore store, IClock clock, BotTrustO
     public async Task<bool> IsBannedAsync(string botNetworkId, CancellationToken cancellationToken = default)
     {
         var rating = await GetRatingAsync(botNetworkId, cancellationToken).ConfigureAwait(false);
-        return rating is { } r && BotTrustRatings.IsBanned(r, _options);
+        return rating is { } r && BotTrustRatings.IsBanned(r);
     }
 
     /// <summary>
@@ -203,7 +203,7 @@ public sealed class BotTrustEngine(IBotTrustStore store, IClock clock, BotTrustO
         // Score claims together for a full hour starting at the oldest pending claim.
         // Rating moves only after that hour has fully elapsed (surge is not applied instantly).
         var bucketStart = pending[0].Utc;
-        var bucketEnd = bucketStart + _options.ClaimWindow;
+        var bucketEnd = bucketStart + BotTrustRatings.ClaimWindow;
         if (now < bucketEnd)
             return;
 
@@ -221,7 +221,7 @@ public sealed class BotTrustEngine(IBotTrustStore store, IClock clock, BotTrustO
         var fraudIds = new HashSet<string>(StringComparer.Ordinal);
         foreach (var (id, list) in byComplainant)
         {
-            if (list.Count <= _options.MaxClaimsPerComplainantPerWindow)
+            if (list.Count <= BotTrustRatings.MaxClaimsPerComplainantPerWindow)
                 continue;
 
             fraudIds.Add(id);
@@ -230,7 +230,7 @@ public sealed class BotTrustEngine(IBotTrustStore store, IClock clock, BotTrustO
                 BotNetworkId = state.BotNetworkId,
                 Kind = BotTrustProcessEventKind.FraudRejected,
                 Message =
-                    $"Rejected {list.Count} claims from {id} in one hour (max {_options.MaxClaimsPerComplainantPerWindow}); rating restored.",
+                    $"Rejected {list.Count} claims from {id} in one hour (max {BotTrustRatings.MaxClaimsPerComplainantPerWindow}); rating restored.",
                 OldRating = ratingBefore,
                 NewRating = ratingBefore
             });
@@ -243,12 +243,12 @@ public sealed class BotTrustEngine(IBotTrustStore store, IClock clock, BotTrustO
             .ToList();
 
         var userCount = Math.Max(1, state.UserNetworkIds.Count);
-        var floodThreshold = _options.FloodUserShareThreshold * userCount;
+        var floodThreshold = BotTrustRatings.FloodUserShareThreshold * userCount;
         var uniqueInHour = byComplainant.Keys.Count(id => !fraudIds.Contains(id));
-        var step = _options.StepG;
+        var step = BotTrustRatings.StepG;
         if (uniqueInHour > floodThreshold)
         {
-            step = Math.Max(_options.MinFloodStepG, _options.StepG / Math.Max(1, uniqueInHour));
+            step = Math.Max(BotTrustRatings.MinFloodStepG, BotTrustRatings.StepG / Math.Max(1, uniqueInHour));
             events.Add(new BotTrustProcessEvent
             {
                 BotNetworkId = state.BotNetworkId,
@@ -294,7 +294,7 @@ public sealed class BotTrustEngine(IBotTrustStore store, IClock clock, BotTrustO
         foreach (var claim in bucketClaims)
             claim.Processed = true;
 
-        var trimBefore = now - _options.ClaimWindow - _options.ClaimWindow;
+        var trimBefore = now - BotTrustRatings.ClaimWindow - BotTrustRatings.ClaimWindow;
         state.Claims.RemoveAll(c => c.Processed && c.Utc < trimBefore);
     }
 
@@ -304,15 +304,15 @@ public sealed class BotTrustEngine(IBotTrustStore store, IClock clock, BotTrustO
     private void ApplyGrowth(BotTrustState state, DateTime now, List<BotTrustProcessEvent> events)
     {
         // Low trust (< 0.5) does not recover automatically — only middle/high can grow while quiet.
-        if (BotTrustRatings.IsBanned(state.Rating, _options))
+        if (BotTrustRatings.IsBanned(state.Rating))
             return;
 
         var quietSince = state.LastClaimUtc ?? state.PublishedAtUtc;
         var quietFor = now - quietSince;
-        if (quietFor < _options.GrowthPeriod)
+        if (quietFor < BotTrustRatings.GrowthPeriod)
             return;
 
-        var months = (int)(quietFor.Ticks / _options.GrowthPeriod.Ticks);
+        var months = (int)(quietFor.Ticks / BotTrustRatings.GrowthPeriod.Ticks);
         if (months <= state.GrowthMonthsApplied)
             return;
 
@@ -321,7 +321,7 @@ public sealed class BotTrustEngine(IBotTrustStore store, IClock clock, BotTrustO
         // Apply month-by-month so middle→high crosses use the matching G each month.
         for (var i = 0; i < extra; i++)
         {
-            if (BotTrustRatings.IsBanned(state.Rating, _options))
+            if (BotTrustRatings.IsBanned(state.Rating))
                 break;
 
             var step = GrowthStepFor(state.Rating);
@@ -344,12 +344,12 @@ public sealed class BotTrustEngine(IBotTrustStore store, IClock clock, BotTrustO
     }
 
     /// <summary>
-    /// Quiet growth step: middle band uses <see cref="BotTrustOptions.MiddleGrowthStepG"/>, otherwise <see cref="BotTrustOptions.StepG"/>.
+    /// Quiet growth step: middle band uses <see cref="BotTrustRatings.MiddleGrowthStepG"/>, otherwise <see cref="BotTrustRatings.StepG"/>.
     /// </summary>
-    private float GrowthStepFor(float rating) =>
-        BotTrustRatings.Classify(rating, _options) == BotTrustLevel.Middle
-            ? _options.MiddleGrowthStepG
-            : _options.StepG;
+    private static float GrowthStepFor(float rating) =>
+        BotTrustRatings.Classify(rating) == BotTrustLevel.Middle
+            ? BotTrustRatings.MiddleGrowthStepG
+            : BotTrustRatings.StepG;
 
     /// <summary>
     /// Returns whether <paramref name="userId"/> is already listed among the bot's users.

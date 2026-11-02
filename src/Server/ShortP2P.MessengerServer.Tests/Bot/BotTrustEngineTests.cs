@@ -185,6 +185,6 @@ public class BotTrustEngineTests
     {
         clock = new FakeClock(T0);
         var store = new InMemoryBotTrustStore();
-        return new BotTrustEngine(store, clock, new BotTrustOptions());
+        return new BotTrustEngine(store, clock);
     }
 }

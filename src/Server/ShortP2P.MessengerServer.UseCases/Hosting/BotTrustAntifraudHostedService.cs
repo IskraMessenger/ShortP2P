@@ -1,7 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using ShortP2P.MessengerServer.UseCases.BotTrust;
 
 namespace ShortP2P.MessengerServer.UseCases.Hosting;
@@ -12,17 +11,12 @@ namespace ShortP2P.MessengerServer.UseCases.Hosting;
 /// </summary>
 public sealed class BotTrustAntifraudHostedService(
     IServiceScopeFactory scopeFactory,
-    IOptions<BotTrustOptions> options,
     ILogger<BotTrustAntifraudHostedService> logger) : BackgroundService
 {
-    private static readonly TimeSpan MinAntifraudPollInterval = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan AntifraudPollInterval = TimeSpan.FromMinutes(5);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var interval = options.Value.AntifraudPollInterval;
-        if (interval < MinAntifraudPollInterval)
-            interval = MinAntifraudPollInterval;
-
         while (!stoppingToken.IsCancellationRequested)
         {
             try
@@ -44,7 +38,7 @@ public sealed class BotTrustAntifraudHostedService(
 
             try
             {
-                await Task.Delay(interval, stoppingToken).ConfigureAwait(false);
+                await Task.Delay(AntifraudPollInterval, stoppingToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {

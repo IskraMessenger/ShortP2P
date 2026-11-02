@@ -19,8 +19,7 @@ public class ListBotsUseCaseTests
 
         var trust = new BotTrustEngine(
             new InMemoryBotTrustStore(),
-            new FakeClock(new DateTime(2026, 10, 18, 0, 0, 0, DateTimeKind.Utc)),
-            new BotTrustOptions());
+            new FakeClock(new DateTime(2026, 10, 18, 0, 0, 0, DateTimeKind.Utc)));
         var list = await new ListBotsUseCase(repo, trust).ExecuteAsync();
 
         Assert.Equal(["net-a", "net-z"], list.Select(b => b.NetworkId).ToArray());

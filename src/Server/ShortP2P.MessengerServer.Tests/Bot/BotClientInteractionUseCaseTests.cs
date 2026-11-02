@@ -163,7 +163,7 @@ public class BotClientInteractionUseCaseTests
 
         public Harness()
         {
-            Trust = new BotTrustEngine(TrustStore, Clock, new BotTrustOptions());
+            Trust = new BotTrustEngine(TrustStore, Clock);
         }
 
         public async Task BanBotAsync(string botNetworkId)
