@@ -37,14 +37,13 @@ public static class BotTrustRatings
     /// <summary>Quiet period before one growth step applies.</summary>
     public static readonly TimeSpan GrowthPeriod = TimeSpan.FromDays(30);
 
-    public static BotTrustLevel Classify(float rating)
-    {
-        if (rating >= HighThreshold)
-            return BotTrustLevel.High;
-        if (rating >= LowThreshold)
-            return BotTrustLevel.Middle;
-        return BotTrustLevel.Low;
-    }
+    public static BotTrustLevel Classify(float rating) =>
+        rating switch
+        {
+            >= HighThreshold => BotTrustLevel.High,
+            >= LowThreshold => BotTrustLevel.Middle,
+            _ => BotTrustLevel.Low
+        };
 
     public static bool IsBanned(float rating) => Classify(rating) == BotTrustLevel.Low;
 
