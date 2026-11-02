@@ -14,6 +14,9 @@ public sealed class BotTrustEngine(IBotTrustStore store, IClock clock, BotTrustO
     private readonly BotTrustOptions _options = options ?? throw new ArgumentNullException(nameof(options));
     private readonly SemaphoreSlim _gate = new(1, 1);
 
+    /// <summary>
+    /// Ensures a trust row exists for the bot (default rating 0.8 at publication).
+    /// </summary>
     public async Task<BotTrustState> EnsurePublishedAsync(
         string botNetworkId,
         DateTime? publishedAtUtc = null,
@@ -42,6 +45,9 @@ public sealed class BotTrustEngine(IBotTrustStore store, IClock clock, BotTrustO
         }
     }
 
+    /// <summary>
+    /// Deletes the trust record for the bot (for example on bot remove).
+    /// </summary>
     public async Task RemoveAsync(string botNetworkId, CancellationToken cancellationToken = default)
     {
         var id = RequireId(botNetworkId);
@@ -56,6 +62,9 @@ public sealed class BotTrustEngine(IBotTrustStore store, IClock clock, BotTrustO
         }
     }
 
+    /// <summary>
+    /// Returns the current trust rating, or <c>null</c> when no trust row exists.
+    /// </summary>
     public async Task<float?> GetRatingAsync(string botNetworkId, CancellationToken cancellationToken = default)
     {
         var id = RequireId(botNetworkId);
@@ -63,12 +72,18 @@ public sealed class BotTrustEngine(IBotTrustStore store, IClock clock, BotTrustO
         return state?.Rating;
     }
 
+    /// <summary>
+    /// Returns <c>true</c> when the bot is in the low-trust band (rating below 0.5).
+    /// </summary>
     public async Task<bool> IsBannedAsync(string botNetworkId, CancellationToken cancellationToken = default)
     {
         var rating = await GetRatingAsync(botNetworkId, cancellationToken).ConfigureAwait(false);
         return rating is { } r && BotTrustRatings.IsBanned(r, _options);
     }
 
+    /// <summary>
+    /// Remembers a client as a user of this bot (for the 10% flood threshold).
+    /// </summary>
     public async Task RememberUserAsync(
         string botNetworkId,
         string clientNetworkId,
@@ -95,7 +110,9 @@ public sealed class BotTrustEngine(IBotTrustStore store, IClock clock, BotTrustO
         }
     }
 
-    /// <summary>Ingests a claim. Rating is not adjusted here — the antifraud hosted service does that.</summary>
+    /// <summary>
+    /// Ingests a claim. Rating is not adjusted here — the antifraud hosted service does that.
+    /// </summary>
     public async Task AddClaimAsync(
         string botNetworkId,
         string complainantNetworkId,
@@ -159,6 +176,9 @@ public sealed class BotTrustEngine(IBotTrustStore store, IClock clock, BotTrustO
         }
     }
 
+    /// <summary>
+    /// Settles one bot: claim-window antifraud, then quiet monthly growth.
+    /// </summary>
     private List<BotTrustProcessEvent> ProcessOne(BotTrustState state, DateTime now)
     {
         var events = new List<BotTrustProcessEvent>();
@@ -168,6 +188,9 @@ public sealed class BotTrustEngine(IBotTrustStore store, IClock clock, BotTrustO
         return events;
     }
 
+    /// <summary>
+    /// Scores pending claims for a completed hour window (fraud, flood G, unique penalties).
+    /// </summary>
     private void ApplyClaimWindow(BotTrustState state, DateTime now, List<BotTrustProcessEvent> events)
     {
         var pending = state.Claims
@@ -275,6 +298,9 @@ public sealed class BotTrustEngine(IBotTrustStore store, IClock clock, BotTrustO
         state.Claims.RemoveAll(c => c.Processed && c.Utc < trimBefore);
     }
 
+    /// <summary>
+    /// Applies quiet-month growth for middle/high trust; low trust does not recover automatically.
+    /// </summary>
     private void ApplyGrowth(BotTrustState state, DateTime now, List<BotTrustProcessEvent> events)
     {
         // Low trust (< 0.5) does not recover automatically — only middle/high can grow while quiet.
@@ -317,17 +343,29 @@ public sealed class BotTrustEngine(IBotTrustStore store, IClock clock, BotTrustO
         }
     }
 
+    /// <summary>
+    /// Quiet growth step: middle band uses <see cref="BotTrustOptions.MiddleGrowthStepG"/>, otherwise <see cref="BotTrustOptions.StepG"/>.
+    /// </summary>
     private float GrowthStepFor(float rating) =>
         BotTrustRatings.Classify(rating, _options) == BotTrustLevel.Middle
             ? _options.MiddleGrowthStepG
             : _options.StepG;
 
+    /// <summary>
+    /// Returns whether <paramref name="userId"/> is already listed among the bot's users.
+    /// </summary>
     private static bool ContainsUser(BotTrustState state, string userId) =>
         state.UserNetworkIds.Any(id => string.Equals(id, userId, StringComparison.Ordinal));
 
+    /// <summary>
+    /// Returns whether this complainant has already applied a unique lifetime penalty.
+    /// </summary>
     private static bool IsPenalized(BotTrustState state, string complainantId) =>
         state.PenalizedComplainants.Any(id => string.Equals(id, complainantId, StringComparison.Ordinal));
 
+    /// <summary>
+    /// Trims and validates a network id.
+    /// </summary>
     private static string RequireId(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
