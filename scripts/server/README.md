@@ -31,7 +31,7 @@ powershell -File scripts\server\publish.ps1 -Rid win-x64
 |-----|------|
 | Бинарники | `C:\Program Files\ShortP2P\MessengerServer\` |
 | Конфиг и данные | `C:\ProgramData\ShortP2P\MessengerServer\` |
-| LiteDB | `...\data\messenger-auth.litedb`, `messenger-trust.litedb`, `messenger-host-powers.litedb` |
+| LiteDB | `...\data\messenger-auth.litedb`, `messenger-trust.litedb`, `messenger-bot-trust.litedb`, `messenger-host-powers.litedb` |
 | Сертификат | `...\certs\` (пусто, свой PFX) |
 | Служба | `ShortP2PMessengerServer`, `ASPNETCORE_ENVIRONMENT=Production` |
 

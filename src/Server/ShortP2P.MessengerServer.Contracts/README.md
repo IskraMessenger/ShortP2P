@@ -51,6 +51,10 @@
 | `GET` | `/api/v1/trust/ask-rating` | Сообщить о сервере (создаётся с рейтингом 0.8) и получить список рейтингов |
 | `GET` | `/api/v1/trust/ask-servers` | Список серверов с рейтингом ≥ **0.3** |
 | `POST` | `/api/v1/trust/claim` | Жалоба на другой сервер (`UNAVAILABLE` / `MALFUNCTIONED` / `WRONGCERT`) |
+| `GET` | `/api/v1/bots` | Каталог ботов (JWT); боты с trust &lt; 0.5 мягко скрыты |
+| `GET` | `/api/v1/bots/{networkId}/version` | Версия бота (JWT) |
+| `GET` | `/api/v1/bots/{networkId}/commands` | Команды бота (JWT) |
+| `POST` | `/api/v1/bots/claim` | Жалоба на бота (JWT); рейтинг пересчитывается antifraud hosted service в часовом окне |
 | `POST` | `/api/v1/bot_server_interaction/register` | Регистрация бота → выдача `BotKey` |
 | `POST` | `/api/v1/bot_server_interaction/login` | Авторизация бота по `BotKey` → JWT |
 | `POST` | `/api/v1/bot_server_interaction/remove` | Удаление бота по `networkId` + `BotKey` |

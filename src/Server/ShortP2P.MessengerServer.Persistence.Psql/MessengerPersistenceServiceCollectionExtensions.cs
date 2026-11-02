@@ -31,7 +31,6 @@ public static class MessengerPersistenceServiceCollectionExtensions
         services.AddScoped<IBlobChunkRepository, PostgresBlobChunkRepository>();
         services.AddScoped<IBotToClientMessageRepository, PostgresBotToClientMessageRepository>();
         services.AddScoped<IClientToBotMessageRepository, PostgresClientToBotMessageRepository>();
-        services.AddScoped<IBotBlacklistRepository, PostgresBotBlacklistRepository>();
         services.AddScoped<IBotAccessLogRepository, PostgresBotAccessLogRepository>();
 
         if (applyMigrationsOnStartup)

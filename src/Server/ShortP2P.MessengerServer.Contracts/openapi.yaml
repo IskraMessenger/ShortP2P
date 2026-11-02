@@ -565,48 +565,32 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
-  /api/v1/bots/blacklist:
+  /api/v1/bots:
     get:
-      operationId: getBotBlackList
-      summary: List blacklisted bot network ids
+      operationId: getBots
+      summary: List registered bots (public fields)
+      description: >
+        Soft-excludes bots with trust rating below 0.5 on this server.
+        Bot operations for low-trust bots return 403.
       tags: [Bots]
       security:
         - bearerAuth: []
       responses:
         '200':
-          description: Blacklisted bot network ids
+          description: Bot catalog
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/BotBlacklistEntryDto'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-    post:
-      operationId: addBotToBlacklist
-      summary: Add a bot network id to the server blacklist
-      tags: [Bots]
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AddBotToBlacklistRequest'
-      responses:
-        '204':
-          description: Added (idempotent)
-        '400':
-          $ref: '#/components/responses/BadRequest'
+                  $ref: '#/components/schemas/BotCatalogDto'
         '401':
           $ref: '#/components/responses/Unauthorized'
 
-  /api/v1/bots/blacklist/{networkId}:
-    delete:
-      operationId: removeBotFromBlacklist
-      summary: Remove a bot network id from the server blacklist
+  /api/v1/bots/{networkId}/version:
+    get:
+      operationId: getBotVersion
+      summary: Version last reported by one registered bot
       tags: [Bots]
       security:
         - bearerAuth: []
@@ -617,12 +601,71 @@ paths:
           schema:
             type: string
       responses:
-        '204':
-          description: Removed (idempotent)
+        '200':
+          description: Bot version
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BotVersionDto'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/bots/{networkId}/commands:
+    get:
+      operationId: getBotCommands
+      summary: Command list last reported by one registered bot
+      tags: [Bots]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: networkId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Bot commands
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BotCommandsDto'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/bots/claim:
+    post:
+      operationId: claimBot
+      summary: Complain about a registered bot
+      description: >
+        Claim is ingested immediately. Rating changes are applied later by the
+        hourly bot-trust antifraud hosted service (ATTENTION!!! logs on decreases/floods).
+      tags: [Bots]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClaimBotRequest'
+      responses:
+        '202':
+          description: Claim accepted
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   /api/v1/bot_client_interaction/wait_for_messages:
     post:
@@ -732,6 +775,12 @@ components:
             $ref: '#/components/schemas/ApiError'
     Unauthorized:
       description: Missing or invalid token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    NotFound:
+      description: Resource not found
       content:
         application/json:
           schema:
@@ -1101,21 +1150,74 @@ components:
         messageId:
           type: string
 
-    BotBlacklistEntryDto:
+    BotCatalogDto:
       type: object
-      required: [networkId]
+      required: [networkId, botName, botReadableName, botDescription]
       properties:
         networkId:
           type: string
-          description: Blacklisted bot short network id
+        botName:
+          type: string
+        botReadableName:
+          type: string
+        botDescription:
+          type: string
+        messagePublicKey:
+          type: string
+          description: RSA public key JSON for client → bot encryption
 
-    AddBotToBlacklistRequest:
+    BotVersionDto:
       type: object
-      required: [networkId]
+      required: [botNetworkId, version]
       properties:
-        networkId:
+        botNetworkId:
           type: string
-          description: Bot short network id to blacklist
+        version:
+          type: integer
+
+    BotCommandArgumentDto:
+      type: object
+      required: [argName, argType]
+      properties:
+        argName:
+          type: string
+        argType:
+          type: string
+          enum: [dynamic, string, number, datetime]
+
+    BotCommandDto:
+      type: object
+      required: [command, description]
+      properties:
+        command:
+          type: string
+          description: Command name including leading slash
+        args:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/BotCommandArgumentDto'
+        description:
+          type: string
+
+    BotCommandsDto:
+      type: object
+      required: [botNetworkId, commands]
+      properties:
+        botNetworkId:
+          type: string
+        commands:
+          type: array
+          items:
+            $ref: '#/components/schemas/BotCommandDto'
+
+    ClaimBotRequest:
+      type: object
+      required: [botNetworkId]
+      properties:
+        botNetworkId:
+          type: string
+          description: Target bot short network id
 
     ApiError:
       type: object

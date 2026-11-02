@@ -60,6 +60,7 @@ export Trust__SelfPort="${Trust__SelfPort:-$HOST_PORT}"
 export Auth__LiteDb__ConnectionString="${Auth__LiteDb__ConnectionString:-Filename=${DATA_DIR}/messenger-auth.litedb;Connection=shared}"
 export HostPowers__LiteDb__ConnectionString="${HostPowers__LiteDb__ConnectionString:-Filename=${DATA_DIR}/messenger-host-powers.litedb;Connection=shared}"
 export Trust__LiteDb__ConnectionString="${Trust__LiteDb__ConnectionString:-Filename=${DATA_DIR}/messenger-trust.litedb;Connection=shared}"
+export BotTrust__LiteDb__ConnectionString="${BotTrust__LiteDb__ConnectionString:-Filename=${DATA_DIR}/messenger-bot-trust.litedb;Connection=shared}"
 
 # Persistent stack: override appsettings Persistence:* via ASP.NET env vars.
 # Credentials come only from the shared secrets volume (never from appsettings).

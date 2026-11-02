@@ -17,7 +17,6 @@ public sealed class MessengerDbContext(DbContextOptions<MessengerDbContext> opti
     public DbSet<BlobChunkRecord> BlobChunks => Set<BlobChunkRecord>();
     public DbSet<BotToClientMessageRecord> BotToClientMessages => Set<BotToClientMessageRecord>();
     public DbSet<ClientToBotMessageRecord> ClientToBotMessages => Set<ClientToBotMessageRecord>();
-    public DbSet<BotBlacklistRecord> BotBlacklist => Set<BotBlacklistRecord>();
     public DbSet<BotAccessLogRecord> BotAccessLogs => Set<BotAccessLogRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -143,13 +142,6 @@ public sealed class MessengerDbContext(DbContextOptions<MessengerDbContext> opti
             e.Property(x => x.CorrelationId).HasMaxLength(32);
             e.HasIndex(x => x.BotNetworkId);
             e.HasIndex(x => x.CreatedUtc);
-        });
-
-        modelBuilder.Entity<BotBlacklistRecord>(e =>
-        {
-            e.ToTable("bot_blacklist");
-            e.HasKey(x => x.NetworkId);
-            e.Property(x => x.NetworkId).HasMaxLength(64);
         });
 
         modelBuilder.Entity<BotAccessLogRecord>(e =>

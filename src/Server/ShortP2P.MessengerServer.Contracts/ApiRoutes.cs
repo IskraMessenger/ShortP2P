@@ -72,8 +72,8 @@ public static class ApiRoutes
     public static string BotCommands(string botNetworkId) =>
         $"{Bots}/{Uri.EscapeDataString(botNetworkId.Trim())}/commands";
 
-    /// <summary>GET bot blacklist for authorized clients.</summary>
-    public const string BotBlacklist = Prefix + "/bots/blacklist";
+    /// <summary>POST claim about a registered bot (JWT). Rating is settled by the hourly antifraud service.</summary>
+    public const string BotClaim = Prefix + "/bots/claim";
 
     /// <summary>
     /// POST register a bot (anonymous; TLS fingerprint required); returns <c>botKey</c> once + server fingerprint.

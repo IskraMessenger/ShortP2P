@@ -5,6 +5,7 @@ using ShortP2P.MessengerServer.Api.Validation;
 using ShortP2P.MessengerServer.Auth.DependencyInjection;
 using ShortP2P.MessengerServer.Auth.LiteDB.DependencyInjection;
 using ShortP2P.MessengerServer.Contracts;
+using ShortP2P.MessengerServer.Infrastructure.BotTrust;
 using ShortP2P.MessengerServer.Infrastructure.HostPowers;
 using ShortP2P.MessengerServer.Infrastructure.Trust;
 using ShortP2P.MessengerServer.UseCases.Abstractions;
@@ -33,6 +34,7 @@ builder.Services.Configure<BotRateLimitOptions>(
 builder.Services.AddPersistence(builder.Configuration);
 builder.Services.AddHostPowersLiteDb(builder.Configuration);
 builder.Services.AddTrustSystemLiteDb(builder.Configuration);
+builder.Services.AddBotTrustLiteDb(builder.Configuration);
 
 builder.Services
     .AddAuth(builder.Configuration)

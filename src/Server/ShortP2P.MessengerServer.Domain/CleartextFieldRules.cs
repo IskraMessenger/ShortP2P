@@ -24,19 +24,6 @@ public static class CleartextFieldRules
         return true;
     }
 
-    public static string RequireValid(string? value, int maxLength, string paramName)
-    {
-        var trimmed = value?.Trim() ?? "";
-        if (!IsValid(trimmed, maxLength))
-        {
-            throw new ArgumentException(
-                $"{paramName} must be 1..{maxLength} characters without controls or angle brackets.",
-                paramName);
-        }
-
-        return trimmed;
-    }
-
     /// <summary>Trims and strips disallowed characters for stored/log fields that must not fail hard.</summary>
     public static string Sanitize(string? value, int maxLength)
     {
@@ -44,14 +31,13 @@ public static class CleartextFieldRules
             return string.Empty;
 
         var trimmed = value.Trim();
-        Span<char> buffer = trimmed.Length <= 1024
+        var buffer = trimmed.Length <= 1024
             ? stackalloc char[trimmed.Length]
             : new char[trimmed.Length];
         var n = 0;
-        foreach (var ch in trimmed)
+        
+        foreach (var ch in trimmed.Where(ch => ch is not (< (char)0x20 or (char)0x7F or '<' or '>')))
         {
-            if (ch is < (char)0x20 or (char)0x7F or '<' or '>')
-                continue;
             buffer[n++] = ch;
             if (n >= maxLength)
                 break;

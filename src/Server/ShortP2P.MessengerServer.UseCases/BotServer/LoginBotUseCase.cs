@@ -1,6 +1,7 @@
 using ShortP2P.MessengerServer.Domain;
 using ShortP2P.MessengerServer.UseCases.Abstractions;
-using ShortP2P.MessengerServer.UseCases.BotBlacklist;
+using ShortP2P.MessengerServer.UseCases.BotAccess;
+using ShortP2P.MessengerServer.UseCases.BotTrust;
 
 namespace ShortP2P.MessengerServer.UseCases.BotServer;
 
@@ -10,7 +11,8 @@ public sealed class LoginBotUseCase(
     IPasswordHasher passwordHasher,
     IAuthTokenService tokenService,
     IServerCertificateReader serverCertificate,
-    BotBlacklistGuard blacklistGuard,
+    BotTrustGuard trustGuard,
+    BotTrustEngine trust,
     BotAccessLogService accessLog)
 {
     /// <summary>Bots are not device-bound; tokens use an all-zero device id placeholder.</summary>
@@ -28,7 +30,7 @@ public sealed class LoginBotUseCase(
                 throw UseCaseException.Validation("version is invalid.");
             var commands = BotCommandNormalizer.Normalize(command.Commands);
 
-            await blacklistGuard
+            await trustGuard
                 .EnsureAllowedAsync(command.NetworkId, BotAccessOperations.Login, cancellationToken)
                 .ConfigureAwait(false);
 
@@ -46,6 +48,10 @@ public sealed class LoginBotUseCase(
 
             if (!await accounts.UpdateReportAsync(account.NetworkId, version, commands, cancellationToken).ConfigureAwait(false))
                 throw UseCaseException.NotFound("Bot was not found.");
+
+            await trust
+                .EnsurePublishedAsync(account.NetworkId, publishedAtUtc: account.CreatedAtUtc, cancellationToken)
+                .ConfigureAwait(false);
 
             var token = tokenService.IssueToken(account.NetworkId, BotDeviceId);
             var serverCert = await serverCertificate.GetAsync(cancellationToken).ConfigureAwait(false);

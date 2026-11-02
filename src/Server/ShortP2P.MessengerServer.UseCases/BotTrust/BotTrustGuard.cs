@@ -1,8 +1,10 @@
-namespace ShortP2P.MessengerServer.UseCases.BotBlacklist;
+using ShortP2P.MessengerServer.UseCases.BotAccess;
 
-/// <summary>Rejects blacklisted bots with Forbidden (403) and records access log + warning.</summary>
-public sealed class BotBlacklistGuard(
-    BotBlacklistService blacklist,
+namespace ShortP2P.MessengerServer.UseCases.BotTrust;
+
+/// <summary>Rejects low-trust bots (rating &lt; 0.5) with Forbidden (403) and records access log.</summary>
+public sealed class BotTrustGuard(
+    BotTrustEngine trust,
     BotAccessLogService accessLog)
 {
     public async Task EnsureAllowedAsync(
@@ -14,10 +16,10 @@ public sealed class BotBlacklistGuard(
             return;
 
         var id = networkId.Trim();
-        if (!await blacklist.ContainsAsync(id, cancellationToken).ConfigureAwait(false))
+        if (!await trust.IsBannedAsync(id, cancellationToken).ConfigureAwait(false))
             return;
 
-        const string detail = "Bot is not allowed.";
+        const string detail = "Bot trust rating is too low.";
         await accessLog
             .WriteAsync(operation, id, botName: null, BotAccessLogService.OutcomeForbidden, detail, cancellationToken)
             .ConfigureAwait(false);

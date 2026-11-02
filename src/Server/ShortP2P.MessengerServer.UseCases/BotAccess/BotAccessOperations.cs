@@ -1,4 +1,4 @@
-namespace ShortP2P.MessengerServer.UseCases.BotBlacklist;
+namespace ShortP2P.MessengerServer.UseCases.BotAccess;
 
 /// <summary>Stable operation names stored in <c>bot_access_log</c>.</summary>
 public static class BotAccessOperations

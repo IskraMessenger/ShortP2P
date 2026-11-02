@@ -37,11 +37,12 @@ src/Server/
 ├── ShortP2P.MessengerServer.Http/                # HTTPS-клиент для ShortP2P.Client
 ├── ShortP2P.MessengerServer.Domain/              # Доменные сущности
 ├── ShortP2P.MessengerServer.UseCases/            # Application-слой
-├── ShortP2P.MessengerServer.Infrastructure/      # In-memory кеш, SystemClock, Trust LiteDB
+├── ShortP2P.MessengerServer.Infrastructure/      # In-memory кеш, SystemClock, Trust/BotTrust LiteDB
 └── ShortP2P.MessengerServer.Persistence.Psql/    # Messenger Postgres (без аккаунтов)
 ```
 
 Рейтинг чужих серверов: проект `src/ShortP2P.TrustSystem` (`AskRating` / `ClaimServer`).
+Рейтинг ботов на этом сервере: `UseCases/BotTrust` + LiteDB (`BotTrustAntifraudHostedService`, `POST /api/v1/bots/claim`); `<0.5` → 403 боту и мягкое исключение из `GET /bots` (низкий рейтинг **не** восстанавливается автоматически); средний band растёт на `G=0.025` за тихий месяц, высокий — на `0.05`.
 
 Все проекты входят в `ShortP2P.sln`.
 

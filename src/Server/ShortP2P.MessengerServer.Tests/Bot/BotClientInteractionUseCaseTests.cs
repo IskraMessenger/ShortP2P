@@ -1,11 +1,11 @@
 using Microsoft.Extensions.Options;
+using ShortP2P.MessengerServer.Api.Persistence.InMemory;
 using ShortP2P.MessengerServer.Domain;
-using ShortP2P.MessengerServer.Infrastructure.Caching;
 using ShortP2P.MessengerServer.Tests.Fakes;
 using ShortP2P.MessengerServer.UseCases;
 using ShortP2P.MessengerServer.UseCases.Abstractions;
-using ShortP2P.MessengerServer.UseCases.BotBlacklist;
 using ShortP2P.MessengerServer.UseCases.BotClient;
+using ShortP2P.MessengerServer.UseCases.BotTrust;
 using ShortP2P.MessengerServer.UseCases.Hosting;
 
 namespace ShortP2P.MessengerServer.Tests.Bot;
@@ -104,7 +104,7 @@ public class BotClientInteractionUseCaseTests
     }
 
     [Fact]
-    public async Task Send_WhenBotBlacklisted_ThrowsForbidden_AndDoesNotStore()
+    public async Task Send_WhenBotLowTrust_ThrowsForbidden_AndDoesNotStore()
     {
         var h = new Harness();
         h.Bots.Add(new BotAccount
@@ -120,7 +120,7 @@ public class BotClientInteractionUseCaseTests
             Version = 1,
             CreatedAtUtc = T0
         });
-        await h.Blacklist.AddAsync("bot");
+        await h.BanBotAsync("bot");
 
         var ex = await Assert.ThrowsAsync<UseCaseException>(() =>
             h.Send().ExecuteAsync(new SendMessageToBotCommand("client", "mid", "bot", T0, Cipher, null)));
@@ -129,11 +129,11 @@ public class BotClientInteractionUseCaseTests
     }
 
     [Fact]
-    public async Task Wait_DropsMessagesFromBlacklistedBots()
+    public async Task Wait_DropsMessagesFromLowTrustBots()
     {
         var h = new Harness();
         h.ToClient.Add(Sample("m1"));
-        await h.Blacklist.AddAsync("bot");
+        await h.BanBotAsync("bot");
 
         var result = await h.Wait().ExecuteAsync(new WaitForBotMessagesQuery("client", 1));
         Assert.Empty(result);
@@ -158,17 +158,20 @@ public class BotClientInteractionUseCaseTests
         public BotToClientWaitService ClientWait { get; } = new();
         public ClientToBotWaitService BotWait { get; } = new();
         public FakeClock Clock { get; } = new(T0);
-        public BotBlacklistService Blacklist { get; }
+        public InMemoryBotTrustStore TrustStore { get; } = new();
+        public BotTrustEngine Trust { get; }
 
         public Harness()
         {
-            var cache = new InMemoryBotBlacklistCache();
-            var repo = new MemoryBotBlacklistRepo();
-            Blacklist = new BotBlacklistService(
-                repo,
-                cache,
-                new MessengerCacheOptions { CacheEnabled = true, RepositoryEnabled = true },
-                Clock);
+            Trust = new BotTrustEngine(TrustStore, Clock);
+        }
+
+        public async Task BanBotAsync(string botNetworkId)
+        {
+            await Trust.EnsurePublishedAsync(botNetworkId, publishedAtUtc: T0);
+            var state = (await TrustStore.GetAsync(botNetworkId))!;
+            state.Rating = 0.4f;
+            await TrustStore.UpsertAsync(state);
         }
 
         public WaitForBotMessagesUseCase Wait() =>
@@ -177,34 +180,11 @@ public class BotClientInteractionUseCaseTests
                 ClientWait,
                 Options.Create(new MessengerInboxOptions { MaxPollTimeoutSeconds = 30 }),
                 Clock,
-                Blacklist);
+                Trust);
 
         public AcknowledgeBotMessageUseCase Ack() => new(ToClient, new EmptyBlobChunks());
 
-        public SendMessageToBotUseCase Send() => new(Bots, ToBot, BotWait, Blacklist);
-    }
-
-    private sealed class MemoryBotBlacklistRepo : IBotBlacklistRepository
-    {
-        private readonly Dictionary<string, BotBlacklistEntry> _items = new(StringComparer.Ordinal);
-
-        public Task AddAsync(BotBlacklistEntry entry, CancellationToken cancellationToken = default)
-        {
-            _items[entry.NetworkId] = entry;
-            return Task.CompletedTask;
-        }
-
-        public Task RemoveAsync(string networkId, CancellationToken cancellationToken = default)
-        {
-            _items.Remove(networkId);
-            return Task.CompletedTask;
-        }
-
-        public Task<bool> ContainsAsync(string networkId, CancellationToken cancellationToken = default) =>
-            Task.FromResult(_items.ContainsKey(networkId));
-
-        public Task<IReadOnlyList<BotBlacklistEntry>> ListAllAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult<IReadOnlyList<BotBlacklistEntry>>(_items.Values.ToArray());
+        public SendMessageToBotUseCase Send() => new(Bots, ToBot, BotWait, Trust);
     }
 
     private sealed class MemoryBotAccounts : IBotAccountRepository
