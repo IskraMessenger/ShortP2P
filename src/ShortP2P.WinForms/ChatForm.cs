@@ -323,6 +323,8 @@ public sealed class ChatForm : Form
         var fresh = await _repo.GetChatAsync(_chat.Id).ConfigureAwait(true) ?? _chat;
         _p2PSession = _p2PRuntime.GetSession(fresh, _user, _auth, _repo, uiSync);
         _p2PSession.MessagesChanged += OnP2pMessagesChanged;
+        _p2PSession.DeliveryPathChanged += OnDeliveryPathChanged;
+        _p2PSession.ActiveChannelChanged += OnActiveChannelChanged;
         if (!_p2PRuntime.IsChatSessionStarted(_chat.Id))
             try
             {
@@ -339,6 +341,7 @@ public sealed class ChatForm : Form
             }
 
         RefreshDeliveryPathButton();
+        RefreshSafetyLabel();
         await ReloadMessagesAsync().ConfigureAwait(true);
         RefreshPeerPresenceLabel();
     }
@@ -395,6 +398,39 @@ public sealed class ChatForm : Form
         }
 
         RefreshDeliveryPathButton();
+        RefreshSafetyLabel();
+    }
+
+    private void OnDeliveryPathChanged(object? sender, EventArgs e)
+    {
+        if (!IsHandleCreated || IsDisposed)
+            return;
+        try
+        {
+            BeginInvoke(() =>
+            {
+                RefreshDeliveryPathButton();
+                RefreshSafetyLabel();
+            });
+        }
+        catch (ObjectDisposedException)
+        {
+            // ignore
+        }
+    }
+
+    private void OnActiveChannelChanged(object? sender, EventArgs e)
+    {
+        if (!IsHandleCreated || IsDisposed)
+            return;
+        try
+        {
+            BeginInvoke(RefreshSafetyLabel);
+        }
+        catch (ObjectDisposedException)
+        {
+            // ignore
+        }
     }
 
     protected override void OnFormClosed(FormClosedEventArgs e)
@@ -406,6 +442,8 @@ public sealed class ChatForm : Form
         if (_p2PSession != null)
         {
             _p2PSession.MessagesChanged -= OnP2pMessagesChanged;
+            _p2PSession.DeliveryPathChanged -= OnDeliveryPathChanged;
+            _p2PSession.ActiveChannelChanged -= OnActiveChannelChanged;
             _p2PSession = null;
         }
 
@@ -1412,7 +1450,8 @@ public sealed class ChatForm : Form
                     _auth.GetCurrentPublicKey(),
                     _chat.PeerNickname,
                     _chat.PeerRsaPublicJson),
-                _chat);
+                _chat,
+                _p2PSession);
         }
         catch
         {

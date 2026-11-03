@@ -652,6 +652,20 @@ public sealed class MessengerServerSyncService : IAsyncDisposable
         _preferredServerByPeer.TryRemove(peerId, out _);
     }
 
+    /// <summary>
+    ///     Base URL of the SHO-10 / Auto server pin for this peer, when still known on a live connection.
+    /// </summary>
+    public bool TryGetPreferredServerBaseUrl(string peerNetworkId, out string? baseUrl)
+    {
+        baseUrl = null;
+        var peerId = ChatRepository.CanonicalPeerNetworkId(peerNetworkId);
+        if (peerId.Length == 0)
+            return false;
+        if (!_preferredServerByPeer.TryGetValue(peerId, out var serverId))
+            return false;
+        return _manager.TryGetServerBaseUrl(serverId, out baseUrl);
+    }
+
     /// <summary>Publish (or refresh) our public key to the peer via all ready servers.</summary>
     public async Task PublishChatRequestAsync(string targetNetworkId, CancellationToken cancellationToken = default)
     {

@@ -45,9 +45,27 @@ public static class PeerSafetyDisplay
     public static string FormatChannel(ChatEntity chat) =>
         FormatChannel(chat.PeerKeySourceKind, chat.PeerKeySourceDetail);
 
-    public static string FormatPanel(string fingerprints, ChatEntity chat)
+    /// <summary>
+    ///     Prefer the live delivery channel from <paramref name="session"/> (server pin / path)
+    ///     over <see cref="ChatEntity.PeerKeySourceKind"/> (key-discovery source).
+    /// </summary>
+    public static string FormatChannel(ChatEntity chat, ChatP2PSession? session)
     {
-        var channel = FormatChannel(chat);
+        if (session != null && session.IsCommunicatingViaMessengerServer)
+        {
+            var endpoint = FormatServerEndpoint(session.ActiveMessengerServerBaseUrl ?? "");
+            return endpoint.Length == 0 ? "Server" : $"Server {endpoint}";
+        }
+
+        return FormatChannel(chat);
+    }
+
+    public static string FormatPanel(string fingerprints, ChatEntity chat) =>
+        FormatPanel(fingerprints, chat, session: null);
+
+    public static string FormatPanel(string fingerprints, ChatEntity chat, ChatP2PSession? session)
+    {
+        var channel = FormatChannel(chat, session);
         return channel.Length == 0 ? fingerprints : fingerprints + Environment.NewLine + "Канал: " + channel;
     }
 

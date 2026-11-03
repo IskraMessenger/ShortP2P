@@ -94,6 +94,7 @@ public sealed class ChatP2PSession : IAsyncDisposable
 
     /// <summary>SHO-10: local UDP establish/send failed; skip UDP outbound until the session is recreated.</summary>
     private bool _udpOutboundUnavailable;
+    private string? _activeMessengerServerBaseUrl;
 
     private int _udpFallbackApplied;
 
@@ -581,6 +582,9 @@ public sealed class ChatP2PSession : IAsyncDisposable
                 _deliveryPath = ChatDeliveryPath.Server;
                 _udpFallbackApplied = 1;
                 _udpOutboundUnavailable = true;
+                if (PeerKeySource.IsServer(_chat.PeerKeySourceKind))
+                    _activeMessengerServerBaseUrl = _chat.PeerKeySourceDetail;
+                RaiseActiveChannelChanged();
                 _startInProgress = false;
                 _startFinished = true;
                 RefreshHandshakeStatus();
@@ -712,7 +716,45 @@ public sealed class ChatP2PSession : IAsyncDisposable
 
     public ChatDeliveryPath DeliveryPath => _deliveryPath;
 
+    /// <summary>
+    ///     True when send/receive for this chat is pinned to a messenger server (manual Server path,
+    ///     Auto server-first pin after hosting-server discovery, or bot chats).
+    /// </summary>
+    public bool IsCommunicatingViaMessengerServer
+    {
+        get
+        {
+            if (_deliveryPath == ChatDeliveryPath.Mesh)
+                return false;
+            if (_deliveryPath == ChatDeliveryPath.Server || _chat.IsBot)
+                return true;
+            if (!string.IsNullOrWhiteSpace(_activeMessengerServerBaseUrl))
+                return true;
+            return _runtime.MessengerServers?.TryGetPreferredServerBaseUrl(_chat.PeerNetworkIdShort, out _) == true;
+        }
+    }
+
+    /// <summary>Base URL of the active messenger-server pin, when known.</summary>
+    public string? ActiveMessengerServerBaseUrl
+    {
+        get
+        {
+            if (!string.IsNullOrWhiteSpace(_activeMessengerServerBaseUrl))
+                return _activeMessengerServerBaseUrl;
+            if (_runtime.MessengerServers != null &&
+                _runtime.MessengerServers.TryGetPreferredServerBaseUrl(_chat.PeerNetworkIdShort, out var preferred) &&
+                !string.IsNullOrWhiteSpace(preferred))
+                return preferred;
+            if (PeerKeySource.IsServer(_chat.PeerKeySourceKind))
+                return string.IsNullOrWhiteSpace(_chat.PeerKeySourceDetail) ? null : _chat.PeerKeySourceDetail;
+            return null;
+        }
+    }
+
     public event EventHandler? DeliveryPathChanged;
+
+    /// <summary>Raised when the effective transport channel for the safety UI may have changed.</summary>
+    public event EventHandler? ActiveChannelChanged;
 
     private void SubscribeToTransceivers()
     {
@@ -3169,9 +3211,11 @@ public sealed class ChatP2PSession : IAsyncDisposable
                 return false;
             }
 
+            _activeMessengerServerBaseUrl = bound.BaseUrl;
             _logger.LogInformation(
                 "Chat {ChatId}: switched send/receive to messenger server {BaseUrl}",
                 _chat.Id, bound.BaseUrl);
+            RaiseActiveChannelChanged();
             return true;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -3324,9 +3368,11 @@ public sealed class ChatP2PSession : IAsyncDisposable
         _deliveryPath = ChatDeliveryPath.Mesh;
         _udpFallbackApplied = 1;
         _udpOutboundUnavailable = false;
+        _activeMessengerServerBaseUrl = null;
         _runtime.MessengerServers?.ClearPreferredServer(_chat.PeerNetworkIdShort);
         await PersistDeliveryPathAsync().ConfigureAwait(false);
         RebuildRouteFromChat();
+        RaiseActiveChannelChanged();
         _logger.LogInformation("Chat {ChatId}: manual switch to mesh (UDP/BLE); reset session and re-invite",
             _chat.Id);
 
@@ -3380,6 +3426,14 @@ public sealed class ChatP2PSession : IAsyncDisposable
             _uiSynchronizationContext.Post(_ => DeliveryPathChanged?.Invoke(this, EventArgs.Empty), null);
         else
             DeliveryPathChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void RaiseActiveChannelChanged()
+    {
+        if (_uiSynchronizationContext != null)
+            _uiSynchronizationContext.Post(_ => ActiveChannelChanged?.Invoke(this, EventArgs.Empty), null);
+        else
+            ActiveChannelChanged?.Invoke(this, EventArgs.Empty);
     }
 
     /// <returns>Server message id, or null to continue on the mesh path. Server mode throws instead of falling through.</returns>
