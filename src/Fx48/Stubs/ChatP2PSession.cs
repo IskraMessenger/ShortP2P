@@ -64,11 +64,20 @@ public sealed class ChatP2PSession
             ? (ChatDeliveryPath)_chat.DeliveryPath
             : ChatDeliveryPath.Server;
 
+    /// <summary>Fx48 always delivers via messenger servers.</summary>
+    public bool IsCommunicatingViaMessengerServer => true;
+
+    /// <summary>Fx48 does not track a live server pin URL on the session.</summary>
+    public string? ActiveMessengerServerBaseUrl =>
+        PeerKeySource.IsServer(_chat.PeerKeySourceKind) ? _chat.PeerKeySourceDetail : null;
+
     public event EventHandler? MessagesChanged;
 
     public event EventHandler<int>? TransferStateChanged;
 
     public event EventHandler? DeliveryPathChanged;
+
+    public event EventHandler? ActiveChannelChanged;
 
     public static string DeliveryPathLabel(ChatDeliveryPath path) => path switch
     {

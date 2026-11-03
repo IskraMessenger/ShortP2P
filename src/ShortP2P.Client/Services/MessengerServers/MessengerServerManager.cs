@@ -130,6 +130,19 @@ public sealed class MessengerServerManager : IAsyncDisposable
 
     public bool IsServerAvailable(int serverId) => GetRankStats(serverId).IsAvailable;
 
+    /// <summary>Base URL of a live connection by server id, if present.</summary>
+    public bool TryGetServerBaseUrl(int serverId, out string? baseUrl)
+    {
+        if (_connections.TryGetValue(serverId, out var conn))
+        {
+            baseUrl = conn.Entity.BaseUrl;
+            return !string.IsNullOrWhiteSpace(baseUrl);
+        }
+
+        baseUrl = null;
+        return false;
+    }
+
     /// <summary>
     /// Статус для шапки: Disabled (серверы выкл.), Waiting, Connected, Disconnected.
     /// </summary>
