@@ -1,15 +1,18 @@
 namespace ShortP2P.Transport.Abstractions;
 
 /// <summary>
-///     Тип физического/логического транспорта для mesh-обмена.
+///     Well-known transport kind identifiers for mesh exchange.
+///     Stored and compared as <see cref="byte"/> so libraries can introduce additional kinds
+///     (define their own <c>const byte</c> values that do not collide with these).
 /// </summary>
-public enum TransportKind : byte
+public static class TransportKind
 {
-    Udp = 1,
-    Bluetooth = 2,
+    public const byte Udp = 1;
 
-    Infrared = 3,
+    public const byte Bluetooth = 2;
 
-    /// <summary>Клиент, найденный через HTTPS messenger-сервер (GetClients), без прямого UDP/BT адреса.</summary>
-    MessengerServer = 4
+    public const byte Infrared = 3;
+
+    /// <summary>Peer discovered via HTTPS messenger server (GetClients), without a direct UDP/BT address.</summary>
+    public const byte MessengerServer = 4;
 }

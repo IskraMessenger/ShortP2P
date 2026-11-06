@@ -887,7 +887,7 @@ public sealed class UserP2pRuntime : IAsyncDisposable
     ///     Обновление маршрута из пинга; старт сессии выполняется отдельно
     ///     <see cref="TryEnsureChatSessionStartedAsync" />.
     /// </summary>
-    private async Task ApplyDiscoveryPingRouteAsync(ChatEntity chat, TransportKind pingKind, string seenDirect,
+    private async Task ApplyDiscoveryPingRouteAsync(ChatEntity chat, byte pingKind, string seenDirect,
         CancellationToken cancellationToken)
     {
         if (!string.IsNullOrEmpty(chat.RelayRouteBlob))

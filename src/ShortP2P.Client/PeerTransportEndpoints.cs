@@ -18,10 +18,10 @@ public static class PeerTransportEndpoints
                 var list = new List<TransportAddress>(arr.Count);
                 foreach (var x in arr)
                 {
-                    if (!Enum.IsDefined(typeof(TransportKind), (byte)x.K))
+                    if (x.K is < byte.MinValue or > byte.MaxValue)
                         continue;
                     var data = Convert.FromBase64String(x.D);
-                    list.Add(new TransportAddress((TransportKind)x.K, data));
+                    list.Add(new TransportAddress((byte)x.K, data));
                 }
 
                 if (list.Count > 0)

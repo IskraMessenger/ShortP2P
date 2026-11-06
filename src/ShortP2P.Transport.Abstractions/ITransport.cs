@@ -7,7 +7,7 @@ namespace ShortP2P.Transport.Abstractions;
 /// </summary>
 public interface ITransport : IAsyncDisposable
 {
-    TransportKind Kind { get; }
+    byte Kind { get; }
 
     /// <summary>
     ///     Входящие пакеты. Заполняется после <see cref="StartAsync" />.

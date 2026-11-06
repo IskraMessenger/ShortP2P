@@ -41,7 +41,7 @@ public sealed class UdpTransport : ITransport
         _udp = CreateClient(bindAddress, listenPort, enableBroadcast);
     }
 
-    public TransportKind Kind => TransportKind.Udp;
+    public byte Kind => TransportKind.Udp;
 
     public ChannelReader<TransportReceiveMessage> Inbound => _channel.Reader;
 

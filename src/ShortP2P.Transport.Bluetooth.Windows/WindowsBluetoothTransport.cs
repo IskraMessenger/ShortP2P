@@ -63,7 +63,7 @@ public sealed class WindowsBluetoothTransport : ITransport
         return ValueTask.CompletedTask;
     }
 
-    public TransportKind Kind => TransportKind.Bluetooth;
+    public byte Kind => TransportKind.Bluetooth;
     public ChannelReader<TransportReceiveMessage> Inbound => Channel.Reader;
 
     public async ValueTask StartAsync(CancellationToken cancellationToken = default)
