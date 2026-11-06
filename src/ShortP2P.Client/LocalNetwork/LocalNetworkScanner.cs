@@ -503,7 +503,7 @@ public sealed class LocalNetworkScanner(
                && _secondaryPresenceTransports.Any(t => t.Kind == TransportKind.Bluetooth);
     }
 
-    private bool IsTransportEnabled(TransportKind kind)
+    private bool IsTransportEnabled(byte kind)
     {
         return kind switch
         {

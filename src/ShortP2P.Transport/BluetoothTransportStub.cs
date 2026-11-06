@@ -11,7 +11,7 @@ public sealed class BluetoothTransportStub : ITransport
 {
     private readonly Channel<TransportReceiveMessage> _channel = Channel.CreateUnbounded<TransportReceiveMessage>();
 
-    public TransportKind Kind => TransportKind.Bluetooth;
+    public byte Kind => TransportKind.Bluetooth;
 
     public ChannelReader<TransportReceiveMessage> Inbound => _channel.Reader;
 

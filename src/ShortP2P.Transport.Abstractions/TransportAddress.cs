@@ -5,12 +5,12 @@ namespace ShortP2P.Transport.Abstractions;
 /// <summary>
 ///     Адрес пира в рамках конкретного транспорта. Содержимое <see cref="Data" /> задаёт реализация транспорта.
 /// </summary>
-public sealed class TransportAddress(TransportKind kind, byte[] data)
+public sealed class TransportAddress(byte kind, byte[] data)
 {
     private const byte UdpFamilyIPv4 = 4;
     private const byte UdpFamilyIPv6 = 6;
 
-    public TransportKind Kind { get; } = kind;
+    public byte Kind { get; } = kind;
 
     public byte[] Data { get; } = data ?? throw new global::System.ArgumentNullException(nameof(data));
 

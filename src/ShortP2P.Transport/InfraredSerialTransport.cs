@@ -25,7 +25,7 @@ public sealed class InfraredSerialTransport : ITransport
         _baudRate = baudRate;
     }
 
-    public TransportKind Kind => TransportKind.Infrared;
+    public byte Kind => TransportKind.Infrared;
 
     public ChannelReader<TransportReceiveMessage> Inbound => _channel.Reader;
 

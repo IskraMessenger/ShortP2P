@@ -23,7 +23,7 @@ public sealed record DiscoveredLocalPeer(
     CompressedNetworkId NetworkId,
     string Nickname,
     TransportAddress SourceAddress,
-    TransportKind TransportKind,
+    byte TransportKind,
     DateTimeOffset LastSeenUtc,
     int PeerDataUdpPort,
     LinkTechnologyPreset AdvertisedLinkTechnology = LinkTechnologyPreset.Unlimited,

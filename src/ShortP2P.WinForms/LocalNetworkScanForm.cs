@@ -151,7 +151,7 @@ public sealed class LocalNetworkScanForm : Form
         }
     }
 
-    private static string FormatTransport(TransportKind k)
+    private static string FormatTransport(byte k)
     {
         return k switch
         {

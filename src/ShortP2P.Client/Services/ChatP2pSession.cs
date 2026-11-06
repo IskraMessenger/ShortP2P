@@ -3102,7 +3102,7 @@ public sealed class ChatP2PSession : IAsyncDisposable
         LogSessionRoleContext("P2P session stopped");
     }
 
-    private bool IsTransportEnabled(TransportKind kind)
+    private bool IsTransportEnabled(byte kind)
     {
         return kind switch
         {
@@ -3115,7 +3115,7 @@ public sealed class ChatP2PSession : IAsyncDisposable
     private bool IsUdpOutboundReady() =>
         IsTransportEnabled(TransportKind.Udp) && !_udpOutboundUnavailable && _runtime.DataUdp != null;
 
-    private bool IsOutboundTransportReady(TransportKind kind) =>
+    private bool IsOutboundTransportReady(byte kind) =>
         kind == TransportKind.Udp ? IsUdpOutboundReady() : IsTransportEnabled(kind);
 
     private bool IsUdpConnectionUnavailable() =>

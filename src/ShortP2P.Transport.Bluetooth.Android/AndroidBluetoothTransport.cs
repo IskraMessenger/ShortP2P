@@ -64,7 +64,7 @@ public sealed class AndroidBluetoothTransport(Context context, AndroidBluetoothT
 
     public ChannelReader<TransportReceiveMessage> Inbound => _inbound.Reader;
 
-    public TransportKind Kind => TransportKind.Bluetooth;
+    public byte Kind => TransportKind.Bluetooth;
 
     public async ValueTask StartAsync(CancellationToken cancellationToken = default)
     {
