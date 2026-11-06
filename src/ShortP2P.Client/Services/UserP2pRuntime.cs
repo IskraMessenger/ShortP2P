@@ -11,6 +11,7 @@ using ShortP2P.Client.Qr;
 using ShortP2P.Client.Routing;
 using ShortP2P.Client.Services.MessengerServers;
 using ShortP2P.Client.Transceivers;
+using ShortP2P.Client.Transport;
 using ShortP2P.Discovery;
 using ShortP2P.Discovery.Ble;
 using ShortP2P.Discovery.Pings;
@@ -28,6 +29,7 @@ public sealed class UserP2pRuntime : IAsyncDisposable
 {
     private readonly AuthService _auth;
     private readonly IBleDiscoveredPeerStore? _bleDiscoveredPeerStore;
+    private readonly IAdditionalTransportProvider? _additionalTransports;
     private readonly IBluetoothTransportProvider? _bluetooth;
     private readonly ChatMediaOptions _chatMedia;
     private readonly ChatRepository _chats;
@@ -35,6 +37,7 @@ public sealed class UserP2pRuntime : IAsyncDisposable
 
     private readonly SemaphoreSlim _dataPortGate = new(1, 1);
     private readonly List<Task> _dataReceiveTasks = [];
+    private readonly HashSet<ITransport> _attachedAdditionalDataTransports = [];
 
     /// <summary>Сериализация старта сессии по discovery-пингу для одного чата (без await внутри lock).</summary>
     private readonly ConcurrentDictionary<int, SemaphoreSlim> _discoverySessionStartGates = new();
@@ -69,7 +72,8 @@ public sealed class UserP2pRuntime : IAsyncDisposable
         ILoggerFactory? loggerFactory = null,
         MessengerServerSyncService? messengerServers = null,
         IPeerProfileStore? peerProfileStore = null,
-        ILocalPeerProfileSource? localPeerProfileSource = null)
+        ILocalPeerProfileSource? localPeerProfileSource = null,
+        IAdditionalTransportProvider? additionalTransports = null)
     {
         _store = store;
         _auth = auth;
@@ -82,6 +86,7 @@ public sealed class UserP2pRuntime : IAsyncDisposable
         _loggerFactory = loggerFactory ?? NullLoggerFactory.Instance;
         _logger = _loggerFactory.CreateLogger<UserP2pRuntime>();
         _bluetooth = bluetooth;
+        _additionalTransports = additionalTransports;
         MessengerServers = messengerServers;
         PeerProfiles = peerProfileStore;
         LocalScan = new LocalNetworkScanner(Settings, udpTransportFactory, () => _bluetooth?.Current,
@@ -187,6 +192,9 @@ public sealed class UserP2pRuntime : IAsyncDisposable
     public BinarySendScheduler BinarySends { get; } = new();
 
     public ITransport? BluetoothTransport => _bluetooth?.Current;
+
+    /// <summary>Optional host transports beyond UDP/Bluetooth (e.g. LoRa/Meshtastic).</summary>
+    public IAdditionalTransportProvider? AdditionalTransports => _additionalTransports;
 
     /// <summary>
     ///     Сканирование LAN: presence UDP 17501; wire discovery (gossip / маршруты)
@@ -358,7 +366,10 @@ public sealed class UserP2pRuntime : IAsyncDisposable
         try
         {
             if (_dataPortMultiplexer != null && _currentDataPortUser?.Id == user.Id)
+            {
+                await AttachAdditionalDataTransportsAsync(cancellationToken).ConfigureAwait(false);
                 return;
+            }
             await StopDataPortCoreAsync(cancellationToken).ConfigureAwait(false);
             _dataCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
@@ -406,9 +417,26 @@ public sealed class UserP2pRuntime : IAsyncDisposable
                     _logger.LogDebug(ex, "BLE data transport did not start");
                 }
 
+            if (_additionalTransports != null)
+                foreach (var extra in _additionalTransports.GetDataTransports())
+                {
+                    if (extra == null || inbound.Contains(extra))
+                        continue;
+                    try
+                    {
+                        await extra.StartAsync(cancellationToken).ConfigureAwait(false);
+                        inbound.Add(extra);
+                        _attachedAdditionalDataTransports.Add(extra);
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        _logger.LogDebug(ex, "Additional data transport kind {Kind} did not start", extra.Kind);
+                    }
+                }
+
             if (inbound.Count == 0)
                 throw new InvalidOperationException(
-                    "Error while establishing connection by UDP, and BLE is not available.");
+                    "Error while establishing connection by UDP, and BLE / additional transports are not available.");
 
             _dataPortMultiplexer = new DataPortMultiplexer(ResolveDataOutboundTransport);
             _dataPortMultiplexer.BleNetworkId.GotData += OnBleNetworkIdReceived;
@@ -437,8 +465,37 @@ public sealed class UserP2pRuntime : IAsyncDisposable
         {
             TransportKind.Udp when Settings.EnableUdpTransport => DataUdp,
             TransportKind.Bluetooth when Settings.EnableBluetoothTransport => BluetoothTransport,
-            _ => null
+            _ => _additionalTransports?.ResolveOutbound(destination)
         };
+    }
+
+    /// <summary>
+    ///     Hot-attach host transports (e.g. LoRa) that appeared after the data port was already up.
+    /// </summary>
+    private async Task AttachAdditionalDataTransportsAsync(CancellationToken cancellationToken)
+    {
+        if (_additionalTransports == null || _dataPortMultiplexer == null || _dataCts == null)
+            return;
+
+        var dataToken = _dataCts.Token;
+        foreach (var extra in _additionalTransports.GetDataTransports())
+        {
+            if (extra == null || !_attachedAdditionalDataTransports.Add(extra))
+                continue;
+            try
+            {
+                await extra.StartAsync(cancellationToken).ConfigureAwait(false);
+                var transport = extra;
+                var mux = _dataPortMultiplexer;
+                _dataReceiveTasks.Add(Task.Run(() => DataPortReceiveLoopAsync(transport, mux, dataToken),
+                    dataToken));
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _attachedAdditionalDataTransports.Remove(extra);
+                _logger.LogDebug(ex, "Late attach of additional transport kind {Kind} failed", extra.Kind);
+            }
+        }
     }
 
     private async Task StopDataPortCoreAsync(CancellationToken cancellationToken)
@@ -479,6 +536,7 @@ public sealed class UserP2pRuntime : IAsyncDisposable
             }
 
         _dataReceiveTasks.Clear();
+        _attachedAdditionalDataTransports.Clear();
 
         if (DataUdp != null)
         {

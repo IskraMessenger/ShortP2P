@@ -845,8 +845,30 @@ public sealed class ChatP2PSession : IAsyncDisposable
     {
         if (!ShouldAcceptIncomingFrom(msg.RemoteAddress))
             return;
+        TryRememberAdditionalPeer(msg.RemoteAddress);
         var messenger = _messenger;
         messenger?.TryAcceptCipher(msg);
+    }
+
+    /// <summary>
+    ///     Host mesh directory (e.g. LoRa): bind peer NetworkId to the radio address after cipher attribution.
+    /// </summary>
+    private void TryRememberAdditionalPeer(TransportAddress from)
+    {
+        if (from.Kind is TransportKind.Udp or TransportKind.Bluetooth)
+            return;
+        var provider = _runtime.AdditionalTransports;
+        if (provider == null || !provider.IsEnabled(from.Kind))
+            return;
+        try
+        {
+            var wire = CompressedNetworkId.FromShortString(_chat.PeerNetworkIdShort).ToWireBytes();
+            provider.RememberPeer(wire, from);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Chat {ChatId}: additional transport RememberPeer failed", _chat.Id);
+        }
     }
 
     /// <summary>Ingest a decrypted chat wire delivered via messenger server (servers-first path).</summary>
@@ -2432,7 +2454,12 @@ public sealed class ChatP2PSession : IAsyncDisposable
                 return;
 
             default:
-                throw new InvalidOperationException($"Транспорт {destination.Kind} не поддерживается для invite.");
+                if (!IsTransportEnabled(destination.Kind))
+                    throw new InvalidOperationException($"Транспорт {destination.Kind} отключён.");
+                var extra = ResolveOutbound(destination)
+                            ?? throw new InvalidOperationException($"Транспорт {destination.Kind} недоступен.");
+                await extra.SendAsync(packet, destination, cancellationToken).ConfigureAwait(false);
+                return;
         }
     }
 
@@ -2497,6 +2524,8 @@ public sealed class ChatP2PSession : IAsyncDisposable
         {
             TransportKind.Udp when IsUdpOutboundReady() => _runtime.DataUdp,
             TransportKind.Bluetooth when IsTransportEnabled(TransportKind.Bluetooth) => BluetoothTransport,
+            _ when IsTransportEnabled(destination.Kind) =>
+                _runtime.AdditionalTransports?.ResolveOutbound(destination),
             _ => null
         };
     }
@@ -3108,7 +3137,7 @@ public sealed class ChatP2PSession : IAsyncDisposable
         {
             TransportKind.Udp => _routingSettings?.EnableUdpTransport ?? true,
             TransportKind.Bluetooth => _routingSettings?.EnableBluetoothTransport ?? true,
-            _ => false
+            _ => _runtime.AdditionalTransports?.IsEnabled(kind) ?? false
         };
     }
 
